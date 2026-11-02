@@ -2,16 +2,18 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { THREAD_FILTERS, TICKET_FILTERS, type Api, type ApiResponse, type RouteParams } from './api.ts'
 import { sourceSkills } from './context.ts'
+import { consoleTrigger } from '../sources/console.ts'
 import type { ModelCatalog } from '@deepseek-ai/dsh-api-session-controller/types'
 import { PromptConflict, SKILL_NAME, SKILL_PREFIX, TEAM_SECTIONS, builtInBase, builtInParts, defaultPrompts, savePrompts, type Prompts }
   from './prompts.ts'
 import { policyVersion } from '../policy.ts'
 import { SettingsConflict, type Settings } from './settings.ts'
 import { SetupError, type SetupProblem } from '../setup.ts'
-import { UserError, type EngineForPeople, type Ticket } from '../core/index.ts'
+import { UserError, threadKey, type EngineForPeople, type Ticket } from '../core/index.ts'
 import type { Deployment, Machine } from '../deployment.ts'
 import type { DshExecutor } from '../executor/dsh.ts'
 import type { Health } from '../sources/host.ts'
@@ -151,6 +153,10 @@ const SaveRequest = z.object({ value: z.unknown(), revision: z.number().int().no
 function routes(runtime: HttpHost): Routes {
   const { store } = runtime
   const ticket = (id: string) => { if (!store.tickets.get(id)) throw new RouteError(404, 'Ticket not found'); return id }
+  const ConsoleText = z.object({ text: z.string().trim().min(1).max(8000) })
+  const ConsoleMessage = ConsoleText.extend({ id: z.string().min(1).max(64) })
+  // 控制台线程键 console:<id> 与 Trigger 的 thread id 互转
+  const threadId = (key: string) => key.startsWith('console:') ? key.slice('console:'.length) : ''
   const promptBody = (input: { body: (maxBytes?: number) => Promise<unknown> }) => input.body(4 * runtime.machine.promptMaxChars.get() + 4096)
   return {
     'GET state': () => stateView(runtime),
@@ -174,6 +180,23 @@ function routes(runtime: HttpHost): Routes {
       const removed = runtime.engine.unsubscribe(params.key)
       return { removed, thread: params.key, context_delivery: await runtime.sessions.delivery(`subscription:${params.key}`) }
     },
+    'POST console/threads': async ({ body }) => {
+      const { text } = ConsoleText.parse(await body())
+      const thread = `t${randomUUID().slice(0, 8)}`
+      const trigger = consoleTrigger({ id: randomUUID(), thread, text, at: new Date().toISOString() })
+      const received = runtime.engine.receive(trigger)
+      runtime.engine.evaluateDue(); runtime.requestPass()
+      return { thread: threadKey({ source: 'console', id: thread }), received, trigger: trigger.id }
+    },
+    'POST console/threads/:key/messages': async ({ params, body }) => {
+      const thread = threadId(params.key)
+      if (!thread) throw new RouteError(400, 'Not a console thread')
+      const { text, id } = ConsoleMessage.parse(await body())
+      const trigger = consoleTrigger({ id, thread, text, at: new Date().toISOString() })
+      const received = runtime.engine.receive(trigger)
+      runtime.requestPass()
+      return { received, trigger: trigger.id }
+    },
     'POST triggers/:id/requeue': ({ params }) => {
       const queued = runtime.engine.reevaluate(params.id)
       runtime.requestPass()
@@ -192,6 +215,15 @@ function routes(runtime: HttpHost): Routes {
     'GET tickets/:id': ({ params }) => ticketPage(runtime, params.id),
     'POST tickets/:id/retry': ({ params }) => { const id = ticket(params.id); runtime.engine.retryTicket(id); return { retried: true } },
     'POST tickets/:id/stop': ({ params }) => { const id = ticket(params.id); runtime.engine.stopTicket(id); return { stopped: true } },
+    'POST tickets/:id/message': async ({ params, body }) => {
+      const id = ticket(params.id)
+      const { text, id: messageId } = ConsoleMessage.parse(await body())
+      const trigger = consoleTrigger({ id: messageId, thread: `ticket-${id}`, text, at: new Date().toISOString() })
+      const received = runtime.engine.receive(trigger)
+      runtime.engine.attach(id, trigger.id)
+      runtime.requestPass()
+      return { received, trigger: trigger.id, attached: true }
+    },
     'POST executor/pause': async ({ body }) => runtime.settings.pause(z.object({ paused: z.boolean() }).parse(await body()).paused, 'panel'),
     'PUT settings/:block': async ({ params, body }) => {
       const block = SettingsBlockSchema.parse(params.block)

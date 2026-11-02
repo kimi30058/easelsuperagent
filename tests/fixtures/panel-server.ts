@@ -313,6 +313,10 @@ const ROUTES: { [K in keyof Api]: Route<K> } = {
     server.threads = []
     return { removed, thread: params.key, context_delivery: 'injected' }
   } },
+  // The console write endpoints: stand-in answers that record nothing, until the console panel tests take them up.
+  'POST console/threads': { body: true, answer: ({ body }) => ({ thread: 'console:t4f9a1c2', received: 'stored',
+    trigger: `console:${body.text.length}` }) },
+  'POST console/threads/:key/messages': { body: true, answer: ({ body }) => ({ received: 'stored', trigger: `console:${body.id}` }) },
   'POST triggers/:id/requeue': { answer: ({ params }) => { server.queued.add(params.id); return { queued: true } } },
   'GET decisions': { query: ['kind', 'window', 'offset', 'limit'], answer: ({ query }) =>
     ({ items: query.kind === 'ignore' ? [] : [acceptDecision()], next_offset: null }) },
@@ -331,6 +335,10 @@ const ROUTES: { [K in keyof Api]: Route<K> } = {
     if (!ticketOf(params.id)) return refuse(404, 'Ticket not found')
     server.tickets.open = []; server.person = server.person.filter(ticket => ticket.id !== params.id)
     return { stopped: true }
+  } },
+  'POST tickets/:id/message': { body: true, answer: ({ params, body }) => {
+    if (!ticketOf(params.id)) return refuse(404, 'Ticket not found')
+    return { received: 'stored', trigger: `console:${body.id}`, attached: true }
   } },
   'POST executor/pause': { body: true, answer: ({ body }) => {
     server.settings = { ...server.settings, paused: body.paused }
