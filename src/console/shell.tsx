@@ -13,6 +13,7 @@ import type { T } from '../client/text.ts'
 import { ThreadPage } from '../client/thread.tsx'
 import { TicketPage } from '../client/ticket.tsx'
 import { TriggerStatus } from '../client/trigger.tsx'
+import { CalendarPage, PersonasPage, SkillsPage } from './content.tsx'
 import { GateActions, MessagesPage } from './inbox.tsx'
 
 /** The console's own translator: the zh words unless the browser asks for English. */
@@ -61,7 +62,7 @@ function TicketWithGate({ id }: { id: string }) {
   return <>{data && <GateActions ticket={data} />}<TicketPage id={id} /></>
 }
 
-/** The active page over the shared views; the console's own pages arrive with the content views and hold a place for now. */
+/** The active page over the shared views and the console's own content and inbox pages. */
 function Page({ route }: { route: Route }) {
   const { t } = usePanel()
   const { state, error, reload } = usePanelData()
@@ -78,7 +79,9 @@ function Page({ route }: { route: Route }) {
     case 'settings': return state ? <SettingsPage key={state.masterId} group={route.query.group} query={route.query}
       state={state} deploymentForm={undefined} /> : waiting
     case 'messages': return <MessagesPage key={route.id} id={route.id} />
-    case 'calendar': case 'personas': case 'skills': return <p>{t('console.emptyCalendar')}</p>
+    case 'calendar': return <CalendarPage />
+    case 'personas': return <PersonasPage />
+    case 'skills': return <SkillsPage />
   }
 }
 

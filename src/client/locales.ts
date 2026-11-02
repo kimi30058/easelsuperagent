@@ -31,6 +31,7 @@ const TEXT = {
   'mode.auto': ['自动接单', 'Auto'],
   'source.feishu': ['飞书', 'Feishu'],
   'source.github': ['GitHub', 'GitHub'],
+  'source.console': ['控制台', 'Console'],
   'health.github': ['GitHub 来源', 'GitHub Source'],
   'health.feishu': ['飞书来源', 'Feishu Source'],
   'health.history': ['飞书补收', 'Feishu recovery'],
