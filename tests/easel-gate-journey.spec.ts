@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { waitsForPerson } from '../src/core/index.ts'
 import { CHAT, feishu, startRuntime, type Host } from './fixtures/host.ts'
 import { SettingsSchema } from '../src/policy.ts'
+import { Commands } from '../src/infra/commands.ts'
 
 vi.setConfig({ testTimeout: 30_000 })
 let h: Host | undefined
@@ -40,6 +41,12 @@ it('gates content behind approval, withholds automatic input, steers the operato
   await h.runtime.idle()
   expect(h.runtime.store.tickets.get(ticket.id)!.ended).toMatchObject({ by: 'executor', outcome: 'completed' })
   expect(h.relays(h.runtime.masterId).some(item => item.kind === 'worker_report' && item.state === 'ready')).toBe(true)
+  // The finished work reaches the requester on Feishu: the main Session answers in the original conversation, and the receipt carries the deliverable path.
+  await h.runTool(h.runtime.masterId, 'orchestrator_reply', { ticket_id: ticket.id, purpose: 'result', text: '已交付：outputs/autumn-run/ 已归档并记录日历' })
+  await h.runtime.idle()
+  const larkCalls = vi.mocked(Commands.prototype.lark).mock.calls.map(([args]) => args.join(' '))
+  expect(larkCalls.some(args => args.includes('+messages-reply') && args.includes('outputs/autumn-run/'))).toBe(true)
+  expect(h.runtime.store.receipts.waiting()).toEqual([])
 })
 
 it('re-gates after a revision: feedback steers the worker, the second approval closes the gate', async () => {
@@ -51,7 +58,6 @@ it('re-gates after a revision: feedback steers the worker, the second approval c
   h.runtime.receive(feishu('4', '标题改短一点', { root_id: 'om_1', parent_id: 'om_1', thread_id: 'omt_1' }))
   await h.runtime.idle()
   const steered = h.deliveries.mock.calls.filter(([call]) => call.sessionId === sessionId && call.mode === 'steer').map(([call]) => call.text)
-  console.log('ALLDELIV', JSON.stringify(h.deliveries.mock.calls.map(([c]) => [c.sessionId, c.mode, c.text.slice(0, 120)])))
   expect(steered.some(text => text.includes('标题改短'))).toBe(true)
   await h.runTool(sessionId, 'orchestrator_report', { state: 'blocked', summary: '已按意见修改', human_action: gate,
     question_for_trigger_id: ticket.origin.triggerId })
