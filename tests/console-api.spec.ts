@@ -126,14 +126,16 @@ it('lists the builtin skills from their SKILL.md frontmatter, skipping directori
     await mkdir(join(root, 'builtin', name), { recursive: true })
     await writeFile(join(root, 'builtin', name, 'SKILL.md'), header)
   }
-  // 内置技能库的真实头形式：description 可为带引号的单行，也可为 YAML 折叠块，且 description 与 --- 之间还有 layer 行
+  // 内置技能库的真实头形式：description 可为带引号的单行，也可为 YAML 折叠块（含 >- 这类截断指示符），且 description 与 --- 之间还有 layer 行
   await skill('copywriting', '---\nname: copywriting\ndescription: "营销文案写作"\nlayer: produce\n---\n\n# 营销文案写作\n')
   await skill('asset-manager', '---\nname: asset-manager\ndescription: >\n  产物管理：按日期归档。\n  当用户说"整理素材"时使用。\nlayer: general\n---\n\n# 素材管理器\n')
+  await skill('short-drama', '---\nname: short-drama\ndescription: >-\n  短剧创作：写一集\n  竖屏短剧的脚本。\nlayer: produce\n---\n\n# 短剧\n')
   await mkdir(join(root, 'builtin', 'no-skill-md'), { recursive: true })
   await writeFile(join(root, 'builtin', 'README.md'), 'not a skill directory')
   expect(skillsView(root)).toEqual({ items: [
     { name: 'asset-manager', description: '产物管理：按日期归档。 当用户说"整理素材"时使用。' },
     { name: 'copywriting', description: '营销文案写作' },
+    { name: 'short-drama', description: '短剧创作：写一集 竖屏短剧的脚本。' },
   ] })
   expect(skillsView(join(root, 'nowhere'))).toEqual({ items: [] })
 })
@@ -173,6 +175,7 @@ it('serves the console calendar, personas and skills views over the execution ro
   for (const item of skills.body.items as { name: string; description: string }[]) {
     expect(typeof item.name).toBe('string') // 真实技能库整体可读，而不是被成批跳过
     expect(item.description.length).toBeGreaterThan(0)
+    expect(item.description).not.toMatch(/^[|>][+-]?$/) // 裸块指示符（如 ">-"）不是描述，折叠块必须被展开
   }
   // 没有日历记录时是 404，画像目录缺失则是空列表
   const bare = serve({ store: { settings: () => SettingsSchema.parse({}) }, machine: { stateDir: await mkdtemp(join(tmpdir(), 'console-bare-')) } })

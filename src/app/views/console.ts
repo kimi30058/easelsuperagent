@@ -49,18 +49,18 @@ function skillHeader(path: string): { name: string; description: string }[] {
   const name = frontmatter(lines, 'name'), description = frontmatter(lines, 'description')
   return name && description ? [{ name, description }] : []
 }
-/** Reads one frontmatter field of a SKILL.md header: an inline value (a wrapping pair of double quotes stripped), or a `>`/`|` block folded to one line. */
+/** Reads one frontmatter field of a SKILL.md header: an inline value (a wrapping pair of double quotes stripped), or a `>`/`|` block (with any chomping indicator) folded to one line. */
 function frontmatter(lines: string[], key: string): string | undefined {
   const index = lines.findIndex(line => line.startsWith(`${key}:`))
   if (index < 0) return undefined
   const inline = lines[index]!.slice(key.length + 1).trim()
-  if (inline !== '>' && inline !== '|') return /^".*"$/s.test(inline) ? inline.slice(1, -1) : inline
+  if (!/^[|>][+-]?$/.test(inline)) return /^".*"$/s.test(inline) ? inline.slice(1, -1) : inline
   const block: string[] = []
   for (const line of lines.slice(index + 1)) {
     if (!/^[ \t]/.test(line)) break // 每一行比键名行缩进得更深的才属于这个块
     block.push(line.trim())
   }
-  return block.join(' ')
+  return block.join(' ').trimEnd()
 }
 /**
  * Collects the deliverable paths a ticket's assignments reported, deduplicated in first-seen order with every naming
