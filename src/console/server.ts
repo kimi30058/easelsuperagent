@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url'
 import INDEX from './index.html?raw'
 
 export interface ConsoleServerOptions { port?: number; host?: string; upstream?: string; staticDir?: string }
+/** Buffered proxied request bodies stop at this size; the orchestrator's own smaller cap fires only after buffering. */
+const MAX_BODY_BYTES = 1024 * 1024
 /** Loopback sidecar serving the console page and proxying the orchestrator API server-side, so the panel's same-origin contract holds unchanged. */
 export class ConsoleServer {
   private constructor(readonly server: Server, readonly url: string) {}
@@ -13,11 +15,15 @@ export class ConsoleServer {
     const config: Required<ConsoleServerOptions> = { port: options.port ?? Number(process.env.CONSOLE_PORT ?? 3083), host: '127.0.0.1',
       upstream: options.upstream ?? process.env.EASEL_SUPERAGENT_URL ?? 'http://127.0.0.1:3082',
       staticDir: options.staticDir ?? join(dirname(fileURLToPath(import.meta.url)), 'console') }
+    // Requests only arrive after listening replaces `bound` with the resolved port (ephemeral when 0 was requested),
+    // which is the port every Host check below compares against.
+    let bound: Required<ConsoleServerOptions> = config
     // A request that fails (a client aborting mid-body, an unparseable URL) destroys its socket instead of rejecting
     // an unhandled promise and taking the process down.
-    const server = createServer((req, res) => void handle(config, req, res).catch(() => res.destroy()))
+    const server = createServer((req, res) => void handle(bound, req, res).catch(() => res.destroy()))
     await new Promise<void>(resolve => server.listen(config.port, config.host, resolve))
-    return new ConsoleServer(server, `http://127.0.0.1:${(server.address() as { port: number }).port}`)
+    bound = { ...config, port: (server.address() as { port: number }).port }
+    return new ConsoleServer(server, `http://127.0.0.1:${bound.port}`)
   }
   async close(): Promise<void> {
     this.server.closeAllConnections()
@@ -26,6 +32,12 @@ export class ConsoleServer {
 }
 async function handle(config: Required<ConsoleServerOptions>, req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? '/', 'http://127.0.0.1')
+  // The Host check is the sidecar's DNS-rebinding defense, mirroring sameOrigin() in src/app/http.ts: a page whose domain
+  // rebinds to 127.0.0.1 presents its own Host (or Origin) and is refused before any route, healthz included.
+  const host = req.headers.host
+  const loopback = host === `127.0.0.1:${config.port}` || host === `localhost:${config.port}`
+  if (!loopback || (req.headers.origin !== undefined && req.headers.origin !== `http://${host}`))
+    return send(res, 403, 'application/json', '{"error":"loopback host required"}')
   if (url.pathname === '/healthz') return send(res, 200, 'application/json', '{"ok":true}')
   if (url.pathname === '/' || url.pathname === '/index.html') return send(res, 200, 'text/html; charset=utf-8', INDEX, 'no-cache')
   if (url.pathname === '/console.js') {
@@ -37,7 +49,15 @@ async function handle(config: Required<ConsoleServerOptions>, req: IncomingMessa
     if (req.headers['content-type']) headers['content-type'] = String(req.headers['content-type'])
     try {
       // The body is buffered inside the guard: a client aborting mid-body rejects the iterator here, not at the process level.
-      const chunks: Buffer[] = []; for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      // Over the cap nothing is buffered or forwarded; the rest is drained so the client always reads the 413 instead of a reset.
+      const chunks: Buffer[] = []; let size = 0; let over = false
+      for await (const chunk of req) {
+        if (over) continue
+        size += chunk.length
+        if (size > MAX_BODY_BYTES) { over = true; send(res, 413, 'application/json', '{"error":"request too large"}'); continue }
+        chunks.push(Buffer.from(chunk))
+      }
+      if (over) return
       const upstream = await fetch(config.upstream + url.pathname + url.search,
         { method: req.method, headers, body: chunks.length ? Buffer.concat(chunks) : undefined })
       return send(res, upstream.status, 'application/json; charset=utf-8', await upstream.text(), 'no-store')
