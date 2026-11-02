@@ -17,6 +17,10 @@ export interface WorkerReport {
   askedBy?: string
   /** The person's question this report answers, which the worker thereby takes up; authorizes the main Session to send an answer reply. */
   answers?: string
+  /** Deliverable paths the report names (relative to the ticket's workspace root); display data, no engine rule reads them. */
+  deliverables?: string[]
+  /** Platform ids the report names as publish targets (such as `wechat-oa`); display data, no engine rule reads them. */
+  platforms?: string[]
 }
 const RECOVERY_NOTE = 'The host restarted during this ticket. Inspect the current worktree, git history and GitHub state before continuing. Do not repeat an already completed external operation. Finish the original assignment and report its status.'
 
@@ -119,7 +123,8 @@ export class Assignments extends EnginePart {
     else delete ticket.attention
     // A replaced or cleared attention question withdraws any pending unsent reply for the previous question from the outbox.
     if (previous && previous.id !== attention?.id) this.replies.withdrawAttention(previous.id)
-    assignment.report = { state: report.state, summary: report.summary, at }
+    assignment.report = { state: report.state, summary: report.summary, at,
+      ...report.deliverables ? { deliverables: report.deliverables } : {}, ...report.platforms ? { platforms: report.platforms } : {} }
     ticket.updatedAt = at
     if (report.answers && !ticket.answers?.includes(report.answers)) ticket.answers = [...ticket.answers ?? [], report.answers]
     if (report.answers) this.takeUp(ticketId, report.answers)

@@ -489,3 +489,11 @@ it('gives a worker the other messages of the request its ticket was accepted fro
   expect(page).toMatchObject({ batch: [{ trigger_id: other, read: `trigger/${other}` }] })
   expect(await h.runTool(`worker-${ticket.id}`, 'orchestrator_read', { resource: `trigger/${other}` })).toMatchObject({ trigger_id: other })
 })
+
+it('rejects pr_number and records deliverables and platforms in a report', async () => {
+  const { sessionId, ticket } = await h.acceptedTicket(feishu('1', '@bot 写一篇短文'))
+  await expect(h.runTool(sessionId, 'orchestrator_report', { state: 'ready', summary: 'done', pr_number: 7 })).rejects.toThrow(/pr_number/)
+  await h.runTool(sessionId, 'orchestrator_report', { state: 'progress', summary: '初稿完成', deliverables: ['outputs/short/'], platforms: ['wechat-oa'] })
+  expect(h.runtime.store.tickets.get(ticket.id)!.assignments.at(-1)!.report)
+    .toMatchObject({ state: 'progress', summary: '初稿完成', deliverables: ['outputs/short/'], platforms: ['wechat-oa'] })
+})
