@@ -62,5 +62,5 @@ it('reads each page a tab remembered with the parameters it takes, and leaves ou
 })
 it('opens the settings that fix each setup problem: the Deployment group, or the card of the Source it names', () => {
   expect(setupPage('deployment')).toEqual({ page: 'settings', query: { group: 'deployment' } })
-  for (const place of ['github', 'feishu'] as const) expect(setupPage(place)).toEqual({ page: 'settings', query: { group: 'source', source: place } })
+  for (const place of ['feishu'] as const) expect(setupPage(place)).toEqual({ page: 'settings', query: { group: 'source', source: place } })
 })

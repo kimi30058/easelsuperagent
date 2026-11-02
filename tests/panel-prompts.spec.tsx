@@ -46,11 +46,11 @@ it('shows a built-in skill with the CLI notes in the full prompt, editable as a 
   at({ page: 'settings', query: { group: 'prompts' } })
   await mount()
   await click(tab(zh.promptViewFull))
-  await act(async () => { const select = field<HTMLSelectElement>(zh.promptPreviewTarget); select.value = 'skill/github'; select.dispatchEvent(new Event('change', { bubbles: true })) }); await settle()
+  await act(async () => { const select = field<HTMLSelectElement>(zh.promptPreviewTarget); select.value = 'skill/feishu'; select.dispatchEvent(new Event('change', { bubbles: true })) }); await settle()
   expect(text()).toContain('## CLI usage')
-  expect(all('.dt-preview-part[data-editable] b').map(name => name.textContent)).toEqual([zh['promptPart.skill/github']])
+  expect(all('.dt-preview-part[data-editable] b').map(name => name.textContent)).toEqual([zh['promptPart.skill/feishu']])
   await click(tab(zh.promptViewEdit))
-  for (const name of ['Bad Name', 'github']) {
+  for (const name of ['Bad Name', 'feishu']) {
     await type(field<HTMLInputElement>(zh.promptAddSkill), name)
     await click(zh.promptAddSkillAction)
     expect(document.querySelector('[role="alert"]')?.textContent).toBe(zh.promptSkillNameInvalid)

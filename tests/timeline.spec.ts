@@ -7,8 +7,6 @@ import { Engine, type ChannelRef, type Trigger } from '../src/core/index.ts'
 import { Store } from '../src/app/store.ts'
 import { threadDetail } from '../src/app/views/threads.ts'
 import { SettingsSchema, settingsPolicy } from '../src/policy.ts'
-import { githubKind } from '../src/sources/github.ts'
-import { githubLink } from '../src/sources/github-channel.ts'
 import { SourceRegistry } from '../src/sources/registry.ts'
 
 let directory: string
@@ -19,8 +17,7 @@ beforeEach(() => {
 })
 afterEach(() => { store.close(); rmSync(directory, { recursive: true, force: true }) })
 const sources = new SourceRegistry(() => SettingsSchema.parse({}))
-sources.register(githubKind)
-const host = () => ({ store, sources, links: (channel: ChannelRef) => githubLink(channel.address, {}) })
+const host = () => ({ store, sources, links: (_channel: ChannelRef) => ({ url: '', label: { zh: '链接', en: 'Link' } }) })
 const engine = () => new Engine({ repo: store, scope: sources, policy: () => settingsPolicy(SettingsSchema.parse({}), sources),
   assessor: { request: () => {} }, executor: { start: async () => {}, deliver: async () => {}, stop: async () => {} },
   outbox: { send: () => {}, status: () => undefined, withdraw: () => {} } })

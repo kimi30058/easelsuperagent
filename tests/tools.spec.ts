@@ -33,16 +33,16 @@ it('reads the lists, a ticket, a decision, the settings, the prompts and the mod
     trigger_id: trigger.id, assignments: { items: [expect.objectContaining({ state: 'running' })] }, assignment: `ticket/${ticket.id}/assignment` })
   // The settings name each block's revision and hold the small blocks; a block reads whole by the name a save takes.
   const settings = await read('settings')
-  expect(settings).toMatchObject({ eval: { value: { mode: 'auto' } }, policy: { revision: expect.any(Number), allowed: { feishu: 1, github: 1 }, read: 'settings/policy' },
-    pause: { value: { paused: false } }, sources: expect.arrayContaining([expect.objectContaining({ id: 'github', read: 'settings/source:github' })]) })
+  expect(settings).toMatchObject({ eval: { value: { mode: 'auto' } }, policy: { revision: expect.any(Number), allowed: { feishu: 1 }, read: 'settings/policy' },
+    pause: { value: { paused: false } }, sources: expect.arrayContaining([expect.objectContaining({ id: 'feishu', read: 'settings/source:feishu' })]) })
   expect(JSON.stringify(settings)).not.toContain('ou_alice')
-  for (const block of ['policy', 'eval', 'executor', 'pause', 'source:github']) {
+  for (const block of ['policy', 'eval', 'executor', 'pause', 'source:feishu']) {
     const page = await read(`settings/${block}`) as { text: string }
     expect(JSON.parse(page.text)).toEqual({ block, revision: h.runtime.store.blockRevision(block as 'policy'), value: h.runtime.settings.block(block).value })
   }
   expect(JSON.parse((await read('settings/policy') as { text: string }).text).value.sources.feishu.allowed).toEqual([{ id: 'ou_alice', name: 'Alice' }])
   await expect(read('settings/source:retired')).rejects.toThrow('Unknown settings block')
-  const skills = { built_in: ['easel-superagent-feishu', 'easel-superagent-github'], team: [] }
+  const skills = { built_in: ['easel-superagent-feishu'], team: [] }
   expect(await read('prompts')).toMatchObject({ revision: 0, read: 'prompts/0', skills, items: [expect.objectContaining({ revision: 0 })], next_offset: null })
   const models = [{ id: 'm1', name: 'One' }, { id: 'm2', name: 'Two' }]
   const catalog = { default: { provider: 'p', model: 'm1' }, groups: [{ id: 'p', name: 'Provider', models }], failures: [] }
@@ -265,12 +265,11 @@ it('checks an acknowledgement against the IM word limit, not a character count',
 
 it('saves a settings block by name, a Source\'s block with the Source\'s id', async () => {
   const save = (args: Record<string, unknown>) => h.runTool(h.runtime.masterId, 'orchestrator_settings_save', args)
-  const github = { config: h.runtime.store.settings().sources.github!.config, revision: h.runtime.store.blockRevision('source:github') }
-  const off = { enabled: false, config: github.config }
-  await expect(save({ block: 'source', value: off, revision: github.revision })).rejects.toThrow('source names the Source')
-  await expect(save({ block: 'source:github', value: off, revision: github.revision })).rejects.toThrow()
-  expect(await save({ block: 'source', source: 'github', value: off, revision: github.revision })).toMatchObject({ saved: true })
-  expect(h.runtime.store.settings().sources.github?.enabled).toBe(false)
+  const feishu = { config: h.runtime.store.settings().sources.feishu!.config, revision: h.runtime.store.blockRevision('source:feishu') }
+  const off = { enabled: false, config: feishu.config }
+  await expect(save({ block: 'source', value: off, revision: feishu.revision })).rejects.toThrow('source names the Source')
+  expect(await save({ block: 'source', source: 'feishu', value: off, revision: feishu.revision })).toMatchObject({ saved: true })
+  expect(h.runtime.store.settings().sources.feishu?.enabled).toBe(false)
   expect(await save({ block: 'pause', value: { paused: true }, revision: 0 })).toEqual({ paused: true })
 })
 
@@ -392,11 +391,12 @@ it('shows a candidate with its thread\'s tickets open first, the tickets it reac
   expect((followup.related_tickets as { ticket_id: string }[]).map(card => card.ticket_id)).toEqual([a.id, b.ticket_id])
   expect(followup).toMatchObject({ tickets_total: 2, delivered_to: [a.id], thread: `feishu:${CHAT}:om_1` })
   expect(String(followup.next_action).length).toBeLessThanOrEqual(100)
-  // A message elsewhere that names a pull request reads the tickets that follow it.
-  const thread = { key: 'github:123', ref: { source: 'github', id: '123' }, createdAt: '', subscriptions: [a.id], correlated: [], pending: [], meta: {} }
+  // The Feishu kind resolves no thread references, so a message that names a followed message id carries no referenced tickets.
+  const thread = { key: 'feishu:oc_issue:om_123', ref: { source: 'feishu', id: 'oc_issue:om_123' }, createdAt: '', subscriptions: [a.id], correlated: [], pending: [], meta: {} }
   h.runtime.store.threads.save(thread)
-  h.runtime.receive(feishu('4', '@bot 看看 #123 的进展')); await h.runtime.idle()
-  expect(relaysOf('candidate').at(-1)).toMatchObject({ related_tickets: [], tickets_total: 0, referenced_tickets: [{ ticket_id: a.id }] })
+  h.runtime.receive(feishu('4', '@bot 看看 om_123 的进展')); await h.runtime.idle()
+  expect(relaysOf('candidate').at(-1)).toMatchObject({ related_tickets: [], tickets_total: 0 })
+  expect(relaysOf('candidate').at(-1)).not.toHaveProperty('referenced_tickets')
 })
 
 it('relays a worker\'s report with its ticket card and the start of its summary, and a question with the card alone', async () => {

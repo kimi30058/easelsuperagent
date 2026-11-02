@@ -8,10 +8,9 @@ import type { Commands } from '../src/infra/commands.ts'
 import { SettingsSchema } from '../src/policy.ts'
 import { testDeployment } from './fixtures/deployment.ts'
 import { deferred } from './fixtures/async.ts'
-import { githubKind } from '../src/sources/github.ts'
 import { SourceRegistry } from '../src/sources/registry.ts'
 
-/** Assessor fixture backed by in-memory repositories and fake GitHub Issue and file reads. */
+/** Assessor fixture backed by in-memory repositories and a fake thread-context reader over comment-shaped messages. */
 function setup(strength: 'explicit' | 'inferred' = 'inferred', bodies = Array.from({ length: 5 }, (_, i) => `comment ${i}`),
   threadContext?: AssessorHost['threadContext']) {
   const comments = bodies.map((body, i) => ({ id: i, html_url: `https://github.com/acme/widgets/issues/1#c${i}`,
@@ -34,11 +33,19 @@ function setup(strength: 'explicit' | 'inferred' = 'inferred', bodies = Array.fr
   } as unknown as Commands
   const repo = new MemoryRepositories()
   const sources = new SourceRegistry(() => SettingsSchema.parse({}))
-  sources.register(githubKind)
+  const fakeContext = (trigger: Trigger): AssessorHost['threadContext'] extends (t: Trigger) => infer C ? C : never => {
+    if (trigger.source !== 'github') return undefined
+    const messages = [{ id: 'https://github.com/acme/widgets/issues/1', from: 'bob',
+      at: new Date(Date.UTC(2026, 8, 9, 0, 0, 0)).toISOString(), text: 'body' },
+      ...bodies.map((body, i) => ({ id: `https://github.com/acme/widgets/issues/1#c${i}`, from: 'bob',
+        at: new Date(Date.UTC(2026, 8, 9, 0, 0, i + 1)).toISOString(), text: body }))]
+    return { messageId: String(trigger.url ?? ''), read: async () => ({ messages, body: { messages: messages.map(message => ({ id: message.id, text: message.text })) } }),
+      images: () => [], image: async () => { throw new Error('No images') } }
+  }
   let engine!: Engine
   const host: AssessorHost = {
     get engine() { return engine }, commands, deployment: testDeployment(), settings: () => SettingsSchema.parse({}),
-    threadContext: threadContext ?? (trigger => sources.threadContext(trigger)),
+    threadContext: threadContext ?? (fakeContext as AssessorHost['threadContext']),
     effects: { enqueue: () => {}, handle: () => {} }, paused: () => false, deliver: async () => {}, candidateCard: async candidate => ({ eval_id: candidate.evalId }),
   }
   const assessor = new MasterAssessor(host)
@@ -68,7 +75,7 @@ it('keeps nothing for an Eval once it is decided, as for one that timed out', as
   for (let n = 1; n <= 3; n++) {
     s.engine.receive(issue(n)); s.engine.evaluateDue()
     await s.assessor.context(`issue-${n}`, signal)
-    await s.tools.orchestrator_eval_read!({ trigger_id: `issue-${n}`, resource: 'file', path: 'src/value.ts', offset: 0 }, signal)
+    await s.tools.orchestrator_eval_read!({ trigger_id: `issue-${n}`, resource: 'message', offset: 0 }, signal)
     expect(s.size()).toBeGreaterThan(0)
     s.engine.decide(`issue-${n}`, { kind: 'ignore', reason: 'not a request' })
     expect(s.size()).toBe(0)

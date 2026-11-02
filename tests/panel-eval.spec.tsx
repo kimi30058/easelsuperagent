@@ -34,7 +34,6 @@ it('keeps a Policy draft across remounts, and merges another save into it sender
   await mount()
   await click(zh['tab.eval'])
   await click(find(zh['tab.settings'], '.dt-status-head button'))
-  expect(all('.dt-subtab').map(tab => tab.textContent)).toEqual(['飞书', 'GitHub'])
   await addUser()
   expect(text()).toContain(zh.draftKept)
   await remount()
@@ -65,11 +64,8 @@ it('keeps the Policy to its rules and each Source\'s part, in that Source\'s own
   for (const gone of ['自动合并', '行数阈值', '成员', '计入策略版本']) expect(text()).not.toContain(gone)
   expect(all('.dt-lv').map(item => item.textContent)[0]).toBe('策略版本 abcdef12')
   expect(text()).toContain('名单内的人 @ 机器人或私聊机器人，总是明确的请求')
-  await click(find(zh['source.github'], '.dt-subtab'))
-  expect(text()).toContain('能发起工作的 GitHub 账号')
-  expect(text()).toContain('名单里的账号在 Issue 或评论里 @ 智能体的账号。')
   // A saved account shows as its id; only a row being added is a field.
-  expect(all('.dt-part .dt-rows-item .dt-row-label').map(label => label.textContent)).toEqual(['alice'])
+  expect(all('.dt-part .dt-rows-item .dt-row-label').map(label => label.textContent)).toEqual(['ou_alice'])
 })
 
 it('opens the rule list for an invalid field inside it only', async () => {
@@ -157,15 +153,9 @@ it('sets the Feishu admission table per receiving scope, offering only the cells
   expect(server.settings.policy.sources.feishu!.admission).toEqual({ oc_team: { unlistedAddressed: 'explicit' } })
 })
 
-it('lists each Source\'s bots next to its people and saves them, and sets the GitHub admission table by its receiving scopes', async () => {
+it('lists each Source\'s bots next to its people and saves them', async () => {
   await mount()
   await click(tab(zh['tab.settings']))
-  // The GitHub Source receives only what is addressed to the agent until a switch opens a scope of the repository.
-  const github = all('.dt-card').find(card => card.querySelector('.dt-card-title')?.textContent === 'GitHub')!
-  expect([...github.querySelectorAll('.dt-switch-row')].map(row => row.textContent)).toEqual(['接收仓库里的新 Issue', '接收仓库里的新 PR',
-    '接收仓库里的评论', '接收默认分支的 CI'])
-  expect([...github.querySelectorAll('[role="switch"]')].slice(1).map(item => item.getAttribute('aria-checked'))).toEqual(['false', 'false',
-    'false', 'false'])
   await click(find(zh['term.eval'], '.dt-settings-link'))
   const lists = () => all('.dt-part > .dt-field .dt-subhead .dt-field-head').map(head => head.firstChild?.textContent)
   const list = (label: string) => all('.dt-part > .dt-field').find(item => item.textContent?.startsWith(label))!
@@ -177,38 +167,6 @@ it('lists each Source\'s bots next to its people and saves them, and sets the Gi
   const bot = await add('消息可以成为候选的机器人')
   await type(bot.querySelector<HTMLInputElement>('input[aria-label="App ID 或 open_id"]')!, 'cli_reviewer')
   await type(bot.querySelector<HTMLInputElement>('input[aria-label="名字"]')!, '评审机器人')
-  await click(find(zh['source.github'], '.dt-subtab'))
-  expect(lists()).toEqual(['能发起工作的 GitHub 账号', '评论可以成为候选的机器人'])
-  await type((await add('评论可以成为候选的机器人')).querySelector<HTMLInputElement>('input[aria-label="账号"]')!, 'dependabot[bot]')
-  // Until the GitHub Source receives the repository's Issues, pull requests, comments or CI, only messages that mention the agent arrive.
-  const rows = () => all('.dt-admission tbody tr').map(row => [row.querySelector('.dt-admission-scope')!.firstChild?.textContent,
-    row.querySelector('.dt-admission-scope small')?.textContent, row.querySelectorAll('select').length])
-  expect(rows()).toEqual([['新 Issue', '仅 @', 1], ['新 PR', '仅 @', 1], ['评论', '仅 @', 1], ['默认分支的 CI', '不接收', 0]])
-  expect(field<HTMLSelectElement>('新 Issue · 名单外 · 点名智能体').value).toBe('ignore')
   await click(zh.save)
   expect(server.settings.policy.sources.feishu!.bots).toEqual([{ id: 'cli_reviewer', name: '评审机器人' }])
-  expect(server.settings.policy.sources.github!.bots).toEqual([{ id: 'dependabot[bot]' }])
-})
-
-it('shows the GitHub Source\'s switches for what it receives across the repository, and the admission rows they open, in English', async () => {
-  server.settings.sources.github = { ...server.settings.sources.github!, config: { ...server.settings.sources.github!.config,
-    observeIssues: true, observeCi: true } }
-  await mount(en)
-  await click(tab(en['tab.settings']))
-  const github = all('.dt-card').find(card => card.querySelector('.dt-card-title')?.textContent === 'GitHub')!
-  expect([...github.querySelectorAll('.dt-switch-row')].map(row => [row.textContent, row.querySelector('[role="switch"]')
-    ?.getAttribute('aria-checked')])).toEqual([['Receive new Issues in the repository', 'true'],
-    ['Receive new pull requests in the repository', 'false'], ['Receive comments in the repository', 'false'],
-    ['Receive the default branch\'s CI', 'true']])
-  await click(find('Receive comments in the repository', '[role="switch"]'))
-  await act(async () => { github.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) }); await settle()
-  expect(server.settings.sources.github!.config).toMatchObject({ observeIssues: true, observeComments: true, observeCi: true })
-  await click(find(en['term.eval'], '.dt-settings-link'))
-  await click(find(en['source.github'], '.dt-subtab'))
-  const rows = all('.dt-admission tbody tr').map(row => [row.querySelector('.dt-admission-scope')!.firstChild?.textContent,
-    row.querySelectorAll('select').length])
-  expect(rows).toEqual([['New Issues', 3], ['New pull requests', 1], ['Comments', 3], ['Default branch CI', 1]])
-  // CI has no sender: its one cell is that of a message off the list that does not mention the agent.
-  expect(field('Default branch CI · Not on the list · no mention')).toBeTruthy()
-  expect(all('.dt-admission thead th').map(cell => cell.textContent)).toContain(en.admissionAddressed)
 })

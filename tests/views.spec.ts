@@ -6,7 +6,6 @@ import { Store } from '../src/app/store.ts'
 import { SettingsSchema } from '../src/policy.ts'
 import { SourceRegistry } from '../src/sources/registry.ts'
 import { feishuKind } from '../src/sources/feishu.ts'
-import { githubKind } from '../src/sources/github.ts'
 import { snapshot, threadSummary, ticketSummary, triggerView } from '../src/app/views/records.ts'
 import { basisFacts, ticketDetail } from '../src/app/views/tickets.ts'
 import { threadDetail } from '../src/app/views/threads.ts'
@@ -17,8 +16,6 @@ import { policyHistory } from '../src/app/settings-history.ts'
 import { KV } from '../src/kv.ts'
 import { feishuLink } from '../src/sources/feishu-channel.ts'
 import { feishuChannel, feishuTriggerId } from '../src/sources/feishu-trigger.ts'
-import { githubLink } from '../src/sources/github-channel.ts'
-import { githubChannel } from '../src/sources/github-trigger.ts'
 import { followupOwners, type ChannelRef } from '../src/core/index.ts'
 
 let directory: string
@@ -28,7 +25,7 @@ beforeEach(() => {
   store = new Store(join(directory, 'orchestrator.sqlite'))
 })
 afterEach(() => { store.close(); rmSync(directory, { recursive: true, force: true }) })
-const links = (channel: ChannelRef) => (channel.source === 'feishu' ? feishuLink : githubLink)(channel.address, {})
+const links = (channel: ChannelRef) => feishuLink(channel.address, {})
 const drop = (id: string, channel: ChannelRef, ticketId?: string) => {
   const message = { id, channel, text: id, kind: 'reply' as const, ...ticketId ? { ticketId } : {} }
   store.receipts.add(message)
@@ -39,22 +36,23 @@ it('names the Thread of each dropped message: the one of the Trigger its Channel
   // A Feishu Channel names its chat; the message it answers belongs to the Thread of the topic's root message.
   store.triggers.save({ id: feishuTriggerId('om_reply'), source: 'feishu', threads: [{ source: 'feishu', id: 'oc_1:om_root' }],
     actor: { source: 'feishu', id: 'ou_a' }, human: true, at: new Date().toISOString(), text: 'please', meta: {} })
-  store.threads.save({ key: 'github:42', ref: { source: 'github', id: '42' }, createdAt: '', subscriptions: [], correlated: [], pending: [],
+  store.threads.save({ key: 'feishu:oc_2:om_gone', ref: { source: 'feishu', id: 'oc_2:om_gone' }, createdAt: '', subscriptions: [], correlated: [], pending: [],
     meta: {} })
+  store.triggers.save({ id: feishuTriggerId('om_gone2'), source: 'feishu', threads: [{ source: 'feishu', id: 'oc_2:om_gone' }],
+    actor: { source: 'feishu', id: 'ou_a' }, human: true, at: new Date().toISOString(), text: 'also', meta: {} })
   drop('a', feishuChannel('oc_1', 'om_reply'))
-  drop('b', githubChannel(42))
+  drop('b', feishuChannel('oc_2', 'om_gone2'))
   // A message whose Trigger and Thread the store no longer has links nowhere.
   drop('c', feishuChannel('oc_2', 'om_gone'))
   expect(Object.fromEntries(droppedReplies({ store, links }).map(item => [item.id, item.thread])))
-    .toEqual({ a: 'feishu:oc_1:om_root', b: 'github:42', c: undefined })
+    .toEqual({ a: 'feishu:oc_1:om_root', b: 'feishu:oc_2:om_gone', c: undefined })
 })
 
 function views() {
-  store.saveSettings(SettingsSchema.parse({ policy: { sources: { feishu: { allowed: [{ id: 'ou_alice', name: 'Alice' }] },
-    github: { allowed: [{ id: 'alice' }] } },
+  store.saveSettings(SettingsSchema.parse({ policy: { sources: { feishu: { allowed: [{ id: 'ou_alice', name: 'Alice' }] } },
     rules: [{ id: 'copy', name: 'Copy fixes', enabled: true, instruction: 'Fix copy' }] } }))
   const sources = new SourceRegistry(() => store.settings())
-  sources.register(feishuKind); sources.register(githubKind)
+  sources.register(feishuKind); 
   return { store, sources, links }
 }
 const at = new Date().toISOString()
@@ -102,14 +100,12 @@ it('states each Source by the first state that holds', () => {
   const host = views()
   const states = (setup: Parameters<typeof sourcesStatus>[2], health: Parameters<typeof sourcesStatus>[1] = {}) =>
     Object.fromEntries(sourcesStatus(host, health, setup).map(source => [source.id, source.state]))
-  expect(states({})).toEqual({ feishu: 'starting', github: 'starting' })
-  expect(states({}, { feishu: { state: 'ready', detail: '' }, history: { state: 'paused', detail: '' }, github: { state: 'error',
-    detail: 'x' } }))
-    .toEqual({ feishu: 'paused', github: 'error' })
+  expect(states({})).toEqual({ feishu: 'starting' })
+  expect(states({}, { feishu: { state: 'ready', detail: '' }, history: { state: 'paused', detail: '' } }))
+    .toEqual({ feishu: 'paused' })
   const problem = { place: 'deployment', code: 'stateDirUnset', values: {}, detail: '' } as never
-  expect(states({ problem }, { feishu: { state: 'ready', detail: '' }, history: { state: 'ready', detail: '' }, github: { state: 'ready',
-    detail: '' } }))
-    .toEqual({ feishu: 'setup', github: 'setup' })
+  expect(states({ problem }, { feishu: { state: 'ready', detail: '' }, history: { state: 'ready', detail: '' } }))
+    .toEqual({ feishu: 'setup' })
 })
 
 it('follows the Ticket\'s stage: a blocked Ticket a person answered since is working, with no retry, note or turn end', () => {
@@ -179,11 +175,11 @@ it('says no Source runs when every Source is off, and states a Source missing or
   const host = views()
   expect(problems(host).map(item => item.kind)).not.toContain('no-source')
   const settings = store.settings()
-  store.saveSettings({ ...settings, sources: { feishu: { enabled: false, config: {} }, github: { enabled: false, config: {} },
+  store.saveSettings({ ...settings, sources: { feishu: { enabled: false, config: {} },
     jira: { enabled: true, config: { site: 'acme' } } } })
   expect(problems(host).map(item => item.kind)).toContain('no-source')
   expect(Object.fromEntries(sourcesStatus(host, {}, {}).map(source => [source.id, [source.state, source.installed]])))
-    .toEqual({ feishu: ['off', true], github: ['off', true], jira: ['missing', false] })
+    .toEqual({ feishu: ['off', true], jira: ['missing', false] })
 })
 
 it('sends text without HTML, entity-encoded tags included, and with images named', () => {

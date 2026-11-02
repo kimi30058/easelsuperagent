@@ -4,7 +4,6 @@ import type { MandateBasis } from '../src/core/index.ts'
 import { migrateSettings } from '../src/app/migration.ts'
 import { SourceRegistry } from '../src/sources/registry.ts'
 import { feishuKind } from '../src/sources/feishu.ts'
-import { githubKind } from '../src/sources/github.ts'
 import type { Thread, Ticket, Trigger } from '../src/core/index.ts'
 
 const MEMBER = 'ou_alice'
@@ -18,7 +17,7 @@ const base = SettingsSchema.parse({
 })
 function setup(settings: Settings = base) {
   const sources = new SourceRegistry(() => settings)
-  sources.register(feishuKind); sources.register(githubKind)
+  sources.register(feishuKind)
   return { sources, policy: settingsPolicy(settings, sources), version: policyVersion(settings) }
 }
 const { sources, policy } = setup()
@@ -47,7 +46,7 @@ describe('source scope', () => {
     expect(broken.scope(feishu())).toEqual({ listened: false, reason: 'source_disabled' })
   })
   it('filters everything from a disabled Source', () => {
-    expect(setup({ ...base, sources: { ...base.sources, github: { enabled: false, config: {} } } }).sources.scope(github('anyone'))).toEqual({ listened: false, reason: 'source_disabled' })
+    expect(setup({ ...base, sources: { ...base.sources, feishu: { enabled: false, config: {} } } }).sources.scope(feishu())).toEqual({ listened: false, reason: 'source_disabled' })
   })
 })
 describe('gate', () => {
@@ -408,48 +407,6 @@ describe('policy effects', () => {
   })
 })
 describe('bots and events without a sender', () => {
-  const observing = (config: Record<string, unknown>, part: Record<string, unknown> = {},
-    mode: 'auto' | 'off' = 'auto') => SettingsSchema.parse({
-    policy: { sources: { github: { allowed: [{ id: 'Alice' }], bots: [{ id: 'dependabot[bot]' }], ...part } } }, eval: { mode },
-    sources: { github: { enabled: true, config } } })
-  const comment: Trigger = { id: 'b', source: 'github', threads: [{ source: 'github', id: '1' }],
-    actor: { source: 'github', id: 'dependabot[bot]' }, human: false, at: '', text: 'Bump lodash',
-    meta: { number: 1, isPr: true, kind: 'conversation' } }
-  const ci = (meta: Record<string, unknown>): Trigger => ({ id: 'ci', source: 'github', threads: [{ source: 'github', id: 'ci:main' }],
-    actor: { source: 'github', id: '' }, human: false, at: '', text: 'CI failed 1/9 on main', meta: { ci: true, ...meta } })
-  it('admits a bot on its Source\'s list as an inferred candidate where the Source observes its scope, and no other bot', () => {
-    const { policy } = setup(observing({ observeComments: true }))
-    expect(policy.gate(comment, thread(), [])).toMatchObject({ admissible: true, strength: 'inferred',
-      basis: { via: 'bot', source: 'github', sender: 'dependabot[bot]', row: 'comments', observation: { mode: 'auto' } } })
-    // A bot that addresses the agent still makes no explicit request; on a Thread with tickets it is no follow-up either.
-    expect(policy.gate({ ...comment, addressed: 'mention' }, thread(['ticket']), [ticket])).toMatchObject({ strength: 'inferred',
-      basis: { via: 'bot', addressed: 'mention' } })
-    expect(policy.gate({ ...comment, actor: { source: 'github', id: 'renovate[bot]' } }, thread(), [])).toEqual({ admissible: false,
-      reason: 'not_human' })
-    expect(setup(observing({})).policy.gate(comment, thread(), [])).toEqual({ admissible: false, reason: 'not_human' })
-    expect(setup(observing({ observeComments: true }, {}, 'off')).policy.gate(comment, thread(), [])).toEqual({ admissible: false,
-      reason: 'admission_ignored' })
-  })
-  it('keeps a bot candidate\'s Mandate while the bot stays on its list and candidates may become work', () => {
-    const settings = observing({ observeComments: true })
-    const mandate = { strength: 'inferred' as const, policyVersion: '', actor: comment.actor, scope: '',
-      basis: { via: 'bot' as const, source: 'github', scope: comment.meta, row: 'comments', sender: 'dependabot[bot]',
-        observation: { mode: 'auto' as const } } }
-    expect(setup(settings).policy.revalidate(mandate)).toBe(true)
-    expect(setup(observing({ observeComments: true }, { bots: [] })).policy.revalidate(mandate)).toBe(false)
-    expect(setup({ ...settings, eval: { ...settings.eval, mode: 'observe' } }).policy.revalidate(mandate)).toBe(false)
-  })
-  it('admits the default branch\'s CI through its row once observed and set, and never a PR\'s CI', () => {
-    const admission = { ci: { unlistedUnaddressed: 'inferred' } }
-    const branch = setup(observing({ observeCi: true }, { admission })).policy.gate(ci({ branch: 'main' }), thread(), [])
-    expect(branch).toMatchObject({ admissible: true, strength: 'inferred',
-      basis: { via: 'admission', cell: 'unlistedUnaddressed', row: 'ci', observation: { mode: 'auto' } } })
-    // The cell defaults to ignore, so observing the CI changes nothing until the table says so.
-    expect(setup(observing({ observeCi: true })).policy.gate(ci({ branch: 'main' }), thread(), [])).toEqual({ admissible: false,
-      reason: 'admission_ignored' })
-    const pull = setup(observing({ observeCi: true }, { admission })).policy.gate(ci({ number: 9, isPr: true }), thread(), [])
-    expect(pull).toEqual({ admissible: false, reason: 'not_human' })
-  })
   it('admits a Feishu bot on its list in a chat the Source observes', () => {
     const settings = SettingsSchema.parse({ ...base, policy: { ...base.policy, sources: { ...base.policy.sources,
       feishu: { ...base.policy.sources.feishu, bots: [{ id: 'cli_alerts', name: 'Alerts' }] } } } })
@@ -461,26 +418,6 @@ describe('bots and events without a sender', () => {
     const unobserved = setup(settings).policy.gate({ ...alert, meta: { chatId: CHAT, direct: false, mentioned: false } }, thread(), [])
     expect(unobserved).toEqual({ admissible: false, reason: 'not_human' })
   })
-  it('says on the GitHub bot list when a listed bot\'s comment is received: when it mentions the agent, or comments are observed', () => {
-    const field = githubKind.policy!.fields.find(item => item.key === 'bots')!
-    const comments = githubKind.fields.find(item => item.key === 'observeComments')!.label
-    expect(field.hint!.en).toContain('mentions the agent')
-    expect(field.hint!.en).toContain(comments.en)
-    expect(field.hint!.zh).toContain(comments.zh)
-  })
-  it('names a GitHub Trigger\'s receiving scope, which the Source observes where its switch is on', () => {
-    const { sources } = setup(observing({ observeIssues: true }))
-    const github = (meta: Record<string, unknown>) => ({ source: 'github', meta })
-    expect(sources.scope(github({ kind: 'issue', number: 3 }))).toEqual({ listened: true, observed: true, row: 'issues' })
-    expect(sources.scope(github({ kind: 'pull', number: 4, isPr: true }))).toEqual({ listened: true, observed: false, row: 'pulls' })
-    expect(sources.scope(github({ kind: 'inline', number: 4 }))).toEqual({ listened: true, observed: false, row: 'comments' })
-    expect(sources.scope(github({ ci: true, branch: 'main' }))).toEqual({ listened: true, observed: false, row: 'ci' })
-    expect(sources.scope(github({ ci: true, number: 4 }))).toEqual({ listened: true, observed: false })
-    const rows = githubKind.policy!.rows!({ observeIssues: true })
-    expect(rows.map(row => [row.id, row.cells])).toEqual([
-      ['issues', { listedUnaddressed: true, unlistedAddressed: true, unlistedUnaddressed: true }],
-      ['pulls', { listedUnaddressed: false, unlistedAddressed: true, unlistedUnaddressed: false }],
-      ['comments', { listedUnaddressed: false, unlistedAddressed: true, unlistedUnaddressed: false }],
-      ['ci', { listedUnaddressed: false, unlistedAddressed: false, unlistedUnaddressed: false }]])
-  })
+
+
 })

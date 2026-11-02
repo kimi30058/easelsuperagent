@@ -8,7 +8,6 @@ import { checkedImText } from '../infra/text.ts'
 import type { Commands } from '../infra/commands.ts'
 import type { Deployment } from '../deployment.ts'
 import { admissionContext } from '../sources/admission-context.ts'
-import { readRepositoryPath } from '../sources/github-read.ts'
 import type { TriggerContext } from '../sources/kind.ts'
 import { relatedTickets } from './cards.ts'
 import { textPage } from './context.ts'
@@ -63,17 +62,15 @@ export interface AssessorHost {
   candidateCard(candidate: Candidate): Promise<Record<string, unknown>>
 }
 
-/** Schema for bounded context or repository read requests during an active evaluation (`orchestrator_eval_read`). */
+/** Schema for bounded context read requests during an active evaluation (`orchestrator_eval_read`). */
 export const EvalReadSchema = z.object({
   trigger_id: z.string().min(1).describe('Original candidate ID returned by orchestrator_eval; every reference is scoped to this trigger.'),
-  resource: z.enum(['message', 'root', 'parent', 'thread', 'file', 'directory', 'image']),
-  path: z.string().optional().describe('Repository-relative path, only for file/directory.'),
+  resource: z.enum(['message', 'root', 'parent', 'thread', 'image']),
   message_id: z.string().optional().describe('Only for message: omit for the trigger, or the id of a window message or stub.'),
   cursor: z.string().optional().describe('Only for thread: omit on the first page, then the next_cursor of the window or the cursor of next_read. Never a thread or message ID.'),
   image_id: z.string().optional().describe('Only for image: an image id the window or a read lists.'),
   offset: z.number().int().min(0).default(0).describe('Text pagination: copy next_offset; keep the other arguments unchanged. Images use 0.'),
 }).strict().superRefine((read, ctx) => {
-  if ((read.resource === 'file' || read.resource === 'directory') !== (read.path !== undefined)) ctx.addIssue({ code: 'custom', message: 'path is required only for file/directory. To read the source/root/parent, use resource=message/root/parent without a path.' })
   if (read.message_id !== undefined && read.resource !== 'message') ctx.addIssue({ code: 'custom', message: 'message_id is only for message; use returned image_id for images.' })
   if (read.cursor !== undefined && read.resource !== 'thread') ctx.addIssue({ code: 'custom', message: 'cursor is only for thread. First page: {resource:"thread"}.' })
   if ((read.resource === 'image') !== (read.image_id !== undefined)) ctx.addIssue({ code: 'custom', message: 'Images require image_id from a returned read reference. Read the thread or root first to discover their images.' })
@@ -83,7 +80,7 @@ export type EvalRead = z.infer<typeof EvalReadSchema>
 
 /**
  * Implements the `Engine` `Assessor` port for proactive candidate evaluation in the main Session.
- * Relays each evaluation's candidate card to the main Session through the durable `assessment` effect, serves bounded `TriggerContext` and repository reads while the evaluation runs, and converts the main Session's assessment into an `AssessmentOutcome` for `Engine.decide`.
+ * Relays each evaluation's candidate card to the main Session through the durable `assessment` effect, serves bounded `TriggerContext` reads while the evaluation runs, and converts the main Session's assessment into an `AssessmentOutcome` for `Engine.decide`.
  * Depends on `SourceRegistry` (via `AssessorHost`) for source-specific thread context and on `Sessions` for deduplicated candidate delivery; the main Session's `orchestrator_eval*` tools call `context`, `read`, and `decide`.
  */
 export class MasterAssessor implements Assessor {
@@ -219,7 +216,7 @@ export class MasterAssessor implements Assessor {
       thread }
   }
   /**
-   * Serves bounded paginated text or image attachments from the evaluation's thread context or repository for
+   * Serves bounded paginated text or image attachments from the evaluation's thread context for
    * `orchestrator_eval_read`; `agent` is the main Session, which receives images as attachments.
    */
   async read(agent: Agent, read: EvalRead, signal: AbortSignal) {
@@ -237,7 +234,7 @@ export class MasterAssessor implements Assessor {
         const key = read.image_id!.slice(read.image_id!.indexOf('/') + 1)
         return source.image(agent, commands, image, key, this.host.deployment.stateDir, signal)
       }
-      const cacheKey = JSON.stringify([read.resource, read.path, read.cursor, read.message_id])
+      const cacheKey = JSON.stringify([read.resource, read.cursor, read.message_id])
       if (read.offset > 0) {
         const cached = snapshots.get(cacheKey)
         if (cached === undefined) throw new Error('Read this resource at offset 0 first')
@@ -262,9 +259,7 @@ export class MasterAssessor implements Assessor {
         const next = result.next ? { trigger_id: trigger.id, resource: 'thread', cursor: result.next } : null
         body = JSON.stringify({ images: references, next_read: next, ...result.body })
       }
-      else {
-        body = await readRepositoryPath(commands, read.path!, read.resource === 'directory' ? 'directory' : 'file')
-      }
+      else throw new Error(`Unknown read resource: ${read.resource as string}`)
       snapshots.set(cacheKey, body)
       return textPage(read.resource, body, read.offset, 4000)
   }
@@ -277,6 +272,6 @@ export class MasterAssessor implements Assessor {
     const decision = this.host.engine.decide(triggerId, { ...outcome, evalId: candidate.evalId })
     return { state: decision.kind, ...(decision.ticketId ? { ticket_id: decision.ticketId } : {}), reason: reasonText(decision.reason) }
   }
-  /** Aborts any in-flight thread context or repository read commands when the runtime stops. */
+  /** Aborts any in-flight thread context read commands when the runtime stops. */
   stop(): void { this.controller.abort() }
 }

@@ -67,10 +67,10 @@ it('shows a Ticket with its stage, its Mandate details with the Trigger and Deci
   expect(all('.dt-chip').map(chip => chip.textContent)).toContain('飞书团队群')
   await click(zh['term.channel'])
   expect(all('.dt-disclosure-body a').map(link => [link.textContent, link.getAttribute('href')])).toEqual([['飞书消息',
-    'https://applink.feishu.cn/client/chat/open?openChatId=oc_1'], ['GitHub #42', 'https://github.com/acme/widgets/issues/42']])
+    'https://applink.feishu.cn/client/chat/open?openChatId=oc_1'], ['飞书消息', 'https://applink.feishu.cn/client/chat/open?openChatId=oc_1']])
   await click(zh['term.environment'])
   expect(all('.dt-disclosure-body .dt-table tr').map(row => row.textContent)).toEqual(['EASEL_SUPERAGENT_DIR/w/t1',
-    'EASEL_SUPERAGENT_GITHUB_NUMBER—'])
+    'EASEL_SUPERAGENT_FEISHU_CHAT—'])
   await click(document.querySelector<HTMLElement>('.dt-trigger-link')!)
   expect(tab(zh['tab.trigger']).getAttribute('aria-selected')).toBe('true')
 })

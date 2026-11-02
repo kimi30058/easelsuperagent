@@ -19,9 +19,9 @@ it('leads the overview with the pending Tickets, then problems, the last day and
   expect(text()).toContain('来源会在每次轮询时自动重试')
   expect(text()).toContain('需要确认按钮颜色')
   expect(all('.dt-stat').map(stat => stat.textContent)).toEqual(['到达12', '被过滤2', '已评估5', '接单或续做1', '执行中2 / 3', '排队0', '等待新触发1'])
-  expect(all('.dt-chip').map(chip => chip.textContent)[0]).toBe('GitHub#42CI 失败1')
+  expect(all('.dt-chip').map(chip => chip.textContent)[0]).toBe('飞书#42CI 失败1')
   expect(document.querySelector('.dt-chip-problem')?.textContent).toBe('CI 失败1')
-  expect(document.querySelector<HTMLAnchorElement>('a.dt-chip-link')?.href).toBe('https://github.com/acme/widgets/pull/42')
+  expect(document.querySelector<HTMLAnchorElement>('a.dt-chip-link')?.href).toBe('https://applink.feishu.cn/client/chat/open?openChatId=oc_1')
   await click(all('.dt-more-link').at(-1)!)
   expect(tab(zh['tab.execution']).getAttribute('aria-selected')).toBe('true')
 })
@@ -97,7 +97,7 @@ it('offers the step that fixes a settings problem as a button on the overview', 
 it('counts the messages not sent in the last day, linking to the Source status, and shows nothing when there are none', async () => {
   await mount()
   expect(all('.dt-stat-label').map(label => label.textContent)).not.toContain(zh.flowDroppedLabel)
-  server.dropped = [droppedReply('m2', 1, 'feishu', 'channelGone'), droppedReply('m1', 2, 'github', 'channelIgnored'), droppedReply('m0',
+  server.dropped = [droppedReply('m2', 1, 'feishu', 'channelGone'), droppedReply('m1', 2, 'feishu', 'channelIgnored'), droppedReply('m0',
     30, 'feishu', 'channelGone')]
   await remount()
   const stat = all('.dt-stat').find(item => item.querySelector('.dt-stat-label')?.textContent === zh.flowDroppedLabel)!
@@ -140,16 +140,16 @@ it('lists the unavailable Evals one by one, without the health entry that counts
 })
 
 it('says when no Source is on, an Eval is past its deadline or a message keeps failing, each with the way to it', async () => {
-  for (const kind of ['feishu', 'github']) server.settings.sources[kind] = { ...server.settings.sources[kind]!, enabled: false }
+  for (const kind of ['feishu', 'feishu']) server.settings.sources[kind] = { ...server.settings.sources[kind]!, enabled: false }
   server.threads = [threadSummary({ key: 'github:9', title: '#9 迟迟未决', stage: 'evaluating',
     evaluating: { id: 'v9', triggers: 1, strength: 'inferred', startedAt: '2026-08-31T23:58:00Z', deadline: '2026-09-01T00:00:00Z' } })]
-  server.failing = [{ id: 'm1', channel: { source: 'github', thread: 'github:42', address: { number: '42' } },
+  server.failing = [{ id: 'm1', channel: { source: 'feishu', thread: 'github:42', address: { number: '42' } },
     text: '已修复', attempts: 4,
     error: 'HTTP 502 from GitHub' }]
   await mount()
   const titles = () => all('.dt-cards .dt-att-what').map(item => item.textContent)
   // The Feishu Source is off, so its error is no problem any more.
-  expect(titles()).toEqual([zh.problemNoSource, '评估超时未决定：#9 迟迟未决', '评估未完成：这个文案好奇怪', 'GitHub 回复发送失败（已重试 4 次）'])
+  expect(titles()).toEqual([zh.problemNoSource, '评估超时未决定：#9 迟迟未决', '评估未完成：这个文案好奇怪', '飞书 回复发送失败（已重试 4 次）'])
   expect(text()).toContain('HTTP 502 from GitHub')
   await click(zh.actionOpenSources)
   expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['settingsGroup.source'])
