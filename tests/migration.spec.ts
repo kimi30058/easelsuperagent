@@ -104,7 +104,7 @@ it('writes a schema 10 database in its current shape once, so nothing reads an o
   expect(settings.sources.github!.config).not.toHaveProperty('mergeCli')
   expect(settings.policy.rules[0]).not.toHaveProperty('visual')
   expect(settings.executor).not.toHaveProperty('reviewer')
-  expect(settings.executor.prepare).toBe('echo $DSH_SUPERAGENT_DIR')
+  expect(settings.executor.prepare).toBe('echo $EASEL_SUPERAGENT_DIR')
   // The current settings are the newest revision, which the migration saved, since the newest saved one differs from them.
   const [current, , second, first] = store.settingsHistory()
   expect(current).toMatchObject({ revision: 4, source: 'internal', settings })
@@ -112,7 +112,7 @@ it('writes a schema 10 database in its current shape once, so nothing reads an o
   expect(first).toMatchObject({ source: 'panel', settings: { sources: { feishu: { config: { chats: [{ chatId: 'oc_team', listen: 'mentions' }] } } } } })
   expect(second).toMatchObject({ source: 'tool', settings: { sources: { 'github-issue': { enabled: true } } } })
   expect(store.get('prompt-version:1')).toMatchObject({ legacy: { config: { guides: { release: 'Use guide/github and dsh-tag-feishu.' } } },
-    config: { skills: { release: 'Use the github section and dsh-superagent-feishu.' } } })
+    config: { skills: { release: 'Use the github section and easel-superagent-feishu.' } } })
   // An invalid historical prompt version keeps its raw value under legacy and falls back to the preceding version's config.
   expect(store.get('prompt-version:2')).toMatchObject({ legacy: { config: { communication: 1 } }, config: store.get<{ config: object }>('prompt-version:1')!.config })
   expect(store.get('settings-version:3')).toMatchObject({ source: 'panel', settings: { executor: { maxWorkers: 'many' } } })
@@ -249,7 +249,7 @@ it('writes a prompt version saved before the team sections in them, keeping its 
   expect(config.delivery).not.toContain('fewer than 200 lines')
   // Guides that are now fixed or built-in are gone; the team's own skills stay, in current names.
   expect(Object.keys(config.skills)).toEqual(['identities', 'notes'])
-  expect(config.skills.notes).toBe('Call orchestrator_route (kind accept) with trigger_id, read trigger/<id>, follow the work section and skill dsh-superagent-release, load dsh-superagent-github, cd "$DSH_SUPERAGENT_DIR".')
+  expect(config.skills.notes).toBe('Call orchestrator_route (kind accept) with trigger_id, read trigger/<id>, follow the work section and skill easel-superagent-release, load easel-superagent-github, cd "$EASEL_SUPERAGENT_DIR".')
   const prompt = composePrompt(config, 'orchestrator')
   expect(prompt).not.toContain('Legacy orchestrator')
   expect(prompt).toContain(masterPrompt)
@@ -265,8 +265,8 @@ it('writes saved team sections and skills under current names: earlier project n
       routing: 'Accept with orchestrator_ticket_accept; stop with orchestrator_ticket_stop, never orchestrator_trigger_ignore.' } }
   const store = opened({ 'prompt-version:1': { revision: 1, previousRevision: 0, savedAt: '', source: 'web', config }, 'prompt-revision': 1, 'prompt-settings-text': 1 })
   const { config: current } = new Prompts(store, () => 100000, () => undefined, () => true).current()
-  expect(current.delivery).toBe('Merge with --repo $DSH_SUPERAGENT_GITHUB_REPOSITORY.')
-  expect(current.skills.notes).toBe('Load dsh-superagent-github; cd "$DSH_SUPERAGENT_DIR". List with orchestrator_read tickets, then orchestrator_read ticket/<id>.')
+  expect(current.delivery).toBe('Merge with --repo $EASEL_SUPERAGENT_GITHUB_REPOSITORY.')
+  expect(current.skills.notes).toBe('Load easel-superagent-github; cd "$EASEL_SUPERAGENT_DIR". List with orchestrator_read tickets, then orchestrator_read ticket/<id>.')
   // The four routing tools are one.
   expect(current.skills.routing).toBe('Accept with orchestrator_route (kind accept); stop with orchestrator_route (kind stop), never orchestrator_route (kind ignore).')
   store.close()

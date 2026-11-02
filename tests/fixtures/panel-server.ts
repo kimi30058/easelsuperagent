@@ -80,7 +80,7 @@ const dayAgo = () => new Date(Date.now() - 86_400_000).toISOString()
 export const problemOf = (code: SetupCode, values: Record<string, string> = {}) => new SetupError(code, values).problem
 // The kinds' configurations differ, and the fake reads them only as the records the views carry.
 const KINDS = [feishuKind, githubKind] as unknown as SourceKind[]
-export const MACHINE = { stateDir: '/srv/dsh-superagent', promptMaxChars: 100000, admissionContextMaxPages: 10,
+export const MACHINE = { stateDir: '/srv/easel-superagent', promptMaxChars: 100000, admissionContextMaxPages: 10,
   admissionContextTimeoutMs: 15000 }
 
 type Settings = ReturnType<typeof SettingsSchema.parse>
@@ -169,11 +169,11 @@ const settingsView = (): ApiResponse<'GET settings'> => ({
     eval: { value: server.settings.eval, revision: server.revisions.eval ?? 0 },
     executor: { value: server.settings.executor, revision: server.revisions.executor ?? 0 } },
   sources: sourceSettings(),
-  environment: { root: '/srv/dsh-superagent/work', variables: [
-    { owner: 'executor', enabled: true, variables: [{ key: 'DSH_SUPERAGENT_DIR', description: { zh: '工单的执行目录',
+  environment: { root: '/srv/easel-superagent/work', variables: [
+    { owner: 'executor', enabled: true, variables: [{ key: 'EASEL_SUPERAGENT_DIR', description: { zh: '工单的执行目录',
       en: 'The ticket directory' } },
-      { key: 'DSH_SUPERAGENT_NAME', description: { zh: '工单短名', en: 'Short name' } }] },
-    { owner: 'github', enabled: false, variables: [{ key: 'DSH_SUPERAGENT_GITHUB_REPOSITORY', description: { zh: '仓库',
+      { key: 'EASEL_SUPERAGENT_NAME', description: { zh: '工单短名', en: 'Short name' } }] },
+    { owner: 'github', enabled: false, variables: [{ key: 'EASEL_SUPERAGENT_GITHUB_REPOSITORY', description: { zh: '仓库',
       en: 'Repository' } }] }] },
 })
 const overviewView = (): ApiResponse<'GET overview'> => {
@@ -209,8 +209,8 @@ const ticketDetail = (): TicketPageView => ({
   mandate: { strength: 'explicit', policyVersion: 'abcdef1234567890', basis: { via: 'addressed', sender: 'Alice', addressed: 'mention' },
     actor: actor('feishu', MEMBER), scope: '修复登录页回归' },
   basis: { facts: [{ name: 'sender', value: 'Alice' }, { name: 'addressed', value: 'mention' }], legacy: false },
-  environment: [{ key: 'DSH_SUPERAGENT_DIR', value: '/w/t1', description: { zh: '执行目录', en: 'Directory' }, owner: 'executor' },
-    { key: 'DSH_SUPERAGENT_GITHUB_NUMBER', value: '', description: { zh: '编号', en: 'Number' }, owner: 'github' }],
+  environment: [{ key: 'EASEL_SUPERAGENT_DIR', value: '/w/t1', description: { zh: '执行目录', en: 'Directory' }, owner: 'executor' },
+    { key: 'EASEL_SUPERAGENT_GITHUB_NUMBER', value: '', description: { zh: '编号', en: 'Number' }, owner: 'github' }],
   channels: [{ source: 'feishu', url: 'https://applink.feishu.cn/client/chat/open?openChatId=oc_1', label: { zh: '飞书消息',
     en: 'Feishu message' } },
     { source: 'github', url: 'https://github.com/acme/widgets/issues/42', label: { zh: 'GitHub #42', en: 'GitHub #42' } }],

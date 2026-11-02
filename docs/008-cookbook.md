@@ -1,10 +1,10 @@
 # 008 Cookbook
 
-This cookbook shows how to extend dsh-superagent. It uses the terms in [001 Domain model](001-domain.md) and [002 Authorization](002-authorization.md), and the components in [007 Architecture](007-architecture.md).
+This cookbook shows how to extend easel-superagent. It uses the terms in [001 Domain model](001-domain.md) and [002 Authorization](002-authorization.md), and the components in [007 Architecture](007-architecture.md).
 
 ## Add a Source
 
-This recipe implements a Source kind called `webhook`. It reads an imaginary message queue through an invented CLI, `hookq`, and converts messages to Triggers. All other interfaces are part of dsh-superagent.
+This recipe implements a Source kind called `webhook`. It reads an imaginary message queue through an invented CLI, `hookq`, and converts messages to Triggers. All other interfaces are part of easel-superagent.
 
 The implementation has four responsibilities: translate events, define receiving and authorization rules, provide replies and context, and maintain a polling loop. The numbered steps build those pieces in order.
 
@@ -237,22 +237,22 @@ If messages reply to earlier messages, add `repliesTo(trigger)`. It returns the 
 
 ```ts
   environment: {
-    variables: [{ key: 'DSH_SUPERAGENT_WEBHOOK_CONVERSATION', description: {
+    variables: [{ key: 'EASEL_SUPERAGENT_WEBHOOK_CONVERSATION', description: {
       zh: '接下工单的 webhook 对话；工单不是从这个来源来的时为空',
       en: 'The webhook conversation that started the ticket; empty when the ticket did not start on this Source' } }],
     values: ({ trigger }) => ({
-      DSH_SUPERAGENT_WEBHOOK_CONVERSATION: trigger?.source === 'webhook' ? String(trigger.meta.conversation ?? '') : '' }),
+      EASEL_SUPERAGENT_WEBHOOK_CONVERSATION: trigger?.source === 'webhook' ? String(trigger.meta.conversation ?? '') : '' }),
   },
 ```
 
 Execution settings show declared `variables` beside the prepare command even when the Source is disabled. While enabled, `values` supplies Ticket-specific values using deployment, configuration and the originating Trigger.
 
-The prepare command reads environment variables; the worker reads their values in its instructions. Use the `DSH_SUPERAGENT_<KIND>_…` prefix, return an empty value for Tickets from another Source, and never include credentials.
+The prepare command reads environment variables; the worker reads their values in its instructions. Use the `EASEL_SUPERAGENT_<KIND>_…` prefix, return an empty value for Tickets from another Source, and never include credentials.
 
 ### 9. The plugin entry and its loop
 
 ```ts
-export const name = 'dsh-superagent-webhook'
+export const name = 'easel-superagent-webhook'
 export const inject = ['orchestrator']
 export function apply(ctx: Context): void {
   ctx.effect(() => ctx.orchestrator.sources.register(webhookKind), 'webhook: source kind')
@@ -272,7 +272,7 @@ The plugin injects `orchestrator`. Its first effect registers the kind and unreg
 ```ts
 async function watch(ctx: SourceContext, signal: AbortSignal): Promise<void> {
   await ctx.ready
-  // Setup restarts dsh-superagent once it resolves the accounts; until then the Source reads nothing.
+  // Setup restarts easel-superagent once it resolves the accounts; until then the Source reads nothing.
   if (!ctx.configured()) { ctx.report('webhook', health('paused', 'setupPending')); return }
   let failures = 0
   while (!signal.aborted) {
@@ -343,12 +343,12 @@ entry: { index: 'src/index.ts', 'github-watch': 'src/sources/github.ts', 'feishu
 Then export the built file in `package.json` by adding `"./webhook-watch": "./lib/webhook-watch.js"` to `exports`, and add the plugin to the `insert` list of the bundle's `cordis.patch.yml`, disabled, as Feishu is:
 
 ```yaml
-    - id: dsh-superagent-webhook
-      name: dsh-superagent/webhook-watch
+    - id: easel-superagent-webhook
+      name: easel-superagent/webhook-watch
       disabled: true
 ```
 
-Enable the plugin in a profile's `cordis.patch.yml` with `id: dsh-superagent-webhook` and `disabled: false`. Build and restart. The new Source appears in Sources settings and under **Eval → On each Source**.
+Enable the plugin in a profile's `cordis.patch.yml` with `id: easel-superagent-webhook` and `disabled: false`. Build and restart. The new Source appears in Sources settings and under **Eval → On each Source**.
 
 Add its module and spec to the module and test tables in [007 Architecture](007-architecture.md). `tests/docs.spec.ts` checks that both indexes are complete.
 

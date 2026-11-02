@@ -225,7 +225,7 @@ it('relays an explicit member mention as a candidate and creates the ticket, ack
   expect(ticket).not.toHaveProperty('ended')
   // The ticket's execution environment is fixed at accept time: its directory under the execution root, and the Sources' values from its Trigger.
   expect(ticket.execution!.directory).toBe(join(directory, 'work', ticket.execution!.name))
-  expect(Object.fromEntries(runtime.ticketEnvironment(ticket).map(variable => [variable.key, variable.value]))).toMatchObject({ DSH_SUPERAGENT_DIR: ticket.execution!.directory, DSH_SUPERAGENT_NAME: ticket.execution!.name, DSH_SUPERAGENT_TICKET: ticket.id, DSH_SUPERAGENT_FEISHU_CHAT: CHAT, DSH_SUPERAGENT_GITHUB_REPOSITORY: 'acme/widgets', DSH_SUPERAGENT_GITHUB_ACCOUNT: 'agent-bot', DSH_SUPERAGENT_GITHUB_NUMBER: '' })
+  expect(Object.fromEntries(runtime.ticketEnvironment(ticket).map(variable => [variable.key, variable.value]))).toMatchObject({ EASEL_SUPERAGENT_DIR: ticket.execution!.directory, EASEL_SUPERAGENT_NAME: ticket.execution!.name, EASEL_SUPERAGENT_TICKET: ticket.id, EASEL_SUPERAGENT_FEISHU_CHAT: CHAT, EASEL_SUPERAGENT_GITHUB_REPOSITORY: 'acme/widgets', EASEL_SUPERAGENT_GITHUB_ACCOUNT: 'agent-bot', EASEL_SUPERAGENT_GITHUB_NUMBER: '' })
   expect(ticket.assignments).toEqual([expect.objectContaining({ state: 'running', startedAt: expect.any(String) })])
   expect(sessionId).toBe(`worker-${ticket.id}`)
   expect(runtime.store.threads.get(`feishu:${CHAT}:om_1`)?.subscriptions).toEqual([ticket.id])
@@ -465,7 +465,7 @@ it('treats GitHub comments through the same gate: mentions by members are explic
   const ticket = runtime.store.tickets.get((result.ticket as { ticket_id: string }).ticket_id)!
   expect(ticket.channels).toEqual([expect.objectContaining({ source: 'github', address: expect.objectContaining({ number: '7' }) })])
   // The PR's head is a variable of the ticket's execution environment; a prepare command may fetch it.
-  expect(Object.fromEntries(runtime.ticketEnvironment(ticket).map(variable => [variable.key, variable.value]))).toMatchObject({ DSH_SUPERAGENT_GITHUB_NUMBER: '7', DSH_SUPERAGENT_GITHUB_PR_HEAD: 'refs/pull/7/head', DSH_SUPERAGENT_FEISHU_CHAT: '' })
+  expect(Object.fromEntries(runtime.ticketEnvironment(ticket).map(variable => [variable.key, variable.value]))).toMatchObject({ EASEL_SUPERAGENT_GITHUB_NUMBER: '7', EASEL_SUPERAGENT_GITHUB_PR_HEAD: 'refs/pull/7/head', EASEL_SUPERAGENT_FEISHU_CHAT: '' })
   const ci = { ...stranger, id: 'ci-1', human: false, text: 'GitHub PR #7 CI: failing', meta: { ci: true } }
   await receive(ci)
   expect(runtime.store.tickets.get(ticket.id)!.inputs).toEqual([expect.objectContaining({ triggerId: 'ci-1' })])
@@ -555,7 +555,7 @@ it('projects read models for the management page and removes thread subscription
   runtime.store.threads.describe(thread.key, { label: 'Named by its source' })
   expect(threadList(viewsOf(runtime), 'all', 0, 20).items[0]).toMatchObject({ title: 'Named by its source' })
   expect((await api('GET', 'state')).body).not.toHaveProperty('tickets')
-  // scripts/dsh-superagent and agents read health from GET state (docs/006, Management API); settings and their revisions have their own route.
+  // scripts/easel-superagent and agents read health from GET state (docs/006, Management API); settings and their revisions have their own route.
   expect((await api('GET', 'state')).body).toMatchObject({ health: { runtime: { state: expect.any(String) } }, paused: false, load: { maxWorkers: 3 } })
   expect((await api('GET', 'settings')).body).toMatchObject({ sources: expect.arrayContaining([expect.objectContaining({ id: 'github',
     revision: expect.any(Number), value: expect.objectContaining({ enabled: true }) })]), blocks: { policy: { revision: expect.any(Number) } } })
@@ -623,7 +623,7 @@ it('refuses an accept through orchestrator_route for inferred candidates so proa
   expect(runtime.store.tickets.list()).toEqual([])
 })
 
-it('syncs a Source\'s list once its plugin loads after dsh-superagent started', async () => {
+it('syncs a Source\'s list once its plugin loads after easel-superagent started', async () => {
   const next = await restart()
   await next.ready
   vi.mocked(Commands.prototype.lark).mockResolvedValue({ users: [{ member_id: MEMBER, name: 'Alice' }], has_more: false })
@@ -715,9 +715,9 @@ it('retries only a failed, blocked or undelivered ticket with a new assignment, 
 })
 
 it('links Channels and Threads for people, finds tickets by a bare PR number, and keeps ended subscriptions out of the default Thread filter', async () => {
-  const { ticket } = await acceptedTicket(feishu('1', '@_user_1 修一下回归', { mentions: [{ id: 'ou_bot', key: '@_user_1', name: 'dsh-superagent' }] }))
+  const { ticket } = await acceptedTicket(feishu('1', '@_user_1 修一下回归', { mentions: [{ id: 'ou_bot', key: '@_user_1', name: 'easel-superagent' }] }))
   const home = `feishu:${CHAT}:om_1`
-  expect(runtime.store.triggers.get(key('feishu', 'om_1'))!.text).toBe('@dsh-superagent 修一下回归')
+  expect(runtime.store.triggers.get(key('feishu', 'om_1'))!.text).toBe('@easel-superagent 修一下回归')
   const chatLink = `https://applink.feishu.cn/client/chat/open?openChatId=${CHAT}`
   expect(ticketDetail(viewsOf(runtime), ticket.id)!.channels).toEqual([expect.objectContaining({ source: 'feishu', url: chatLink })])
   expect(threadDetail(viewsOf(runtime), home, undefined, 10)!.url).toBe(chatLink)
@@ -784,7 +784,7 @@ it('keeps pages of Source reads, prompt previews and Feishu message links in mem
   const link = 'https://applink.feishu.cn/client/message/link/open?token=t30'
   vi.mocked(Commands.prototype.lark).mockResolvedValue({ messages: [{ message_id: 'om_30', chat_id: CHAT, message_app_link: link }] })
   expect(await runTool(runtime.masterId, 'orchestrator_read', { resource: `trigger/${message.id}` })).toMatchObject({ source_url: link })
-  // An AppLink is found by the links read since dsh-superagent started.
+  // An AppLink is found by the links read since easel-superagent started.
   expect((await api('GET', `search?q=${encodeURIComponent(link)}`)).body).toMatchObject({ items: [expect.objectContaining({ id: message.id })] })
   const config = runtime.prompts.current().config
   const { previews } = await runTool(runtime.masterId, 'orchestrator_prompts_save', { config, preview: true }) as { previews: { read: string }[] }
@@ -820,7 +820,7 @@ it('waits for setup without the agent\'s GitHub CLI: the panel works, and nothin
   expect(next.configured()).toBe(false)
   expect(next.setupProblem).toEqual({ place: 'github', code: 'agentCliUnset', values: {}, detail: 'The agent GitHub CLI is not set.' })
   expect(next.health.runtime).toMatchObject({ state: 'paused', code: 'setupPending' })
-  expect(() => next.deployment).toThrow('dsh-superagent is waiting for setup: The agent GitHub CLI is not set.')
+  expect(() => next.deployment).toThrow('easel-superagent is waiting for setup: The agent GitHub CLI is not set.')
   expect((await api('GET', 'state')).body).toMatchObject({ setup: { problem: { place: 'github' }, accounts: null, machine: { stateDir: directory } } })
   expect(overviewOf(next).problems[0]).toEqual({ kind: 'setup', ...next.setupProblem })
   await receive(feishu('30', '@bot 修一下'), next)
@@ -830,7 +830,7 @@ it('waits for setup without the agent\'s GitHub CLI: the panel works, and nothin
   expect(controller.create).not.toHaveBeenCalled()
   expect(deliveries).not.toHaveBeenCalled()
   // A save that changes nothing records nothing; any other save runs setup again, since it may be the fix, and so does a
-  // check after a fix outside dsh-superagent.
+  // check after a fix outside easel-superagent.
   const revision = next.store.get<number>('settings-revision')
   expect(await next.settings.save('policy', next.store.settings().policy, next.store.blockRevision('policy'), 'panel')).toMatchObject({ saved: true, restarting: false })
   expect(next.store.get<number>('settings-revision')).toBe(revision)
@@ -990,7 +990,7 @@ it('writes worker shims and the agent environment from the configuration only, a
   expect(process.env.PATH?.split(':')).not.toContain(bin)
 })
 
-it('waits for setup when the shim directory holds a file dsh-superagent did not write, and leaves the file alone', async () => {
+it('waits for setup when the shim directory holds a file easel-superagent did not write, and leaves the file alone', async () => {
   writeFileSync(join(directory, 'worker-bin', 'my-script'), '#!/bin/sh\n')
   const next = await restart()
   await next.ready
@@ -1016,15 +1016,15 @@ it('tells both roles the execution environment through a generated prompt sectio
   const preview = runtime.prompts.preview(runtime.prompts.current().config)
   const section = preview.parts.worker.at(-1)!
   expect(section.name).toBe('runtime/environment')
-  for (const line of ['- DSH_SUPERAGENT_GITHUB_REPOSITORY = "acme/widgets"', '- DSH_SUPERAGENT_GITHUB_ACCOUNT = "agent-bot"', '- DSH_SUPERAGENT_GITHUB_COMMIT_EMAIL = "7+agent-bot@users.noreply.github.com"']) expect(section.text).toContain(line)
+  for (const line of ['- EASEL_SUPERAGENT_GITHUB_REPOSITORY = "acme/widgets"', '- EASEL_SUPERAGENT_GITHUB_ACCOUNT = "agent-bot"', '- EASEL_SUPERAGENT_GITHUB_COMMIT_EMAIL = "7+agent-bot@users.noreply.github.com"']) expect(section.text).toContain(line)
   expect(section.text).not.toContain('MERGE_ACCOUNT')
   // Outside a ticket there is no ticket directory.
-  expect(section.text).not.toContain('DSH_SUPERAGENT_DIR')
+  expect(section.text).not.toContain('EASEL_SUPERAGENT_DIR')
   // The main Session's Policy section follows it.
   expect(preview.orchestrator).toContain(`${section.text}\n\n## Policy`)
   const { ticket, sessionId } = await acceptedTicket()
-  expect(sections.get(sessionId)!.text({})).toContain(`- DSH_SUPERAGENT_DIR = ${JSON.stringify(ticket.execution!.directory)}`)
-  expect(sections.get(runtime.masterId)!.text({})).not.toContain('DSH_SUPERAGENT_DIR')
+  expect(sections.get(sessionId)!.text({})).toContain(`- EASEL_SUPERAGENT_DIR = ${JSON.stringify(ticket.execution!.directory)}`)
+  expect(sections.get(runtime.masterId)!.text({})).not.toContain('EASEL_SUPERAGENT_DIR')
   const next = await restart({}, { feishu: null })
   await next.ready
   expect(Object.keys(next.prompts.preview(next.prompts.current().config).skills)).not.toContain('feishu')
@@ -1066,7 +1066,7 @@ it('passes team text with template braces to every Session literally, without re
 
 it('leaves auto-merge to the delivery requirements, with the agent\'s own gh and the line threshold', async () => {
   const { ticket } = await acceptedTicket()
-  expect(runtime.ticketEnvironment(ticket).map(variable => variable.key)).not.toContain('DSH_SUPERAGENT_GITHUB_MERGE_ACCOUNT')
+  expect(runtime.ticketEnvironment(ticket).map(variable => variable.key)).not.toContain('EASEL_SUPERAGENT_GITHUB_MERGE_ACCOUNT')
   expect(ticket.mandate).not.toHaveProperty('autoMergeLineLimit')
   const delivery = runtime.prompts.current().config.delivery
   expect(delivery).toContain('it changes fewer than 200 lines (additions plus deletions);')
@@ -1079,10 +1079,10 @@ it('leaves auto-merge to the delivery requirements, with the agent\'s own gh and
 it('runs the prepare command once for a new ticket, under the execution root with the ticket\'s environment, and fails the ticket with its output', async () => {
   const prepare = (command: string) => runtime.store.saveSettings({ ...runtime.store.settings(), executor: { ...runtime.store.settings().executor, prepare: command } })
   const runs = () => subprocess.spawn.mock.calls.map(([spec]) => spec as { argv: string[]; cwd: string; env?: Record<string, string> }).filter(spec => spec.argv[0] === 'sh')
-  prepare('git -C /srv/widgets worktree add "$DSH_SUPERAGENT_DIR" -b "agent/$DSH_SUPERAGENT_NAME"')
+  prepare('git -C /srv/widgets worktree add "$EASEL_SUPERAGENT_DIR" -b "agent/$EASEL_SUPERAGENT_NAME"')
   const { ticket } = await acceptedTicket()
-  expect(runs()).toEqual([expect.objectContaining({ argv: ['sh', '-c', 'git -C /srv/widgets worktree add "$DSH_SUPERAGENT_DIR" -b "agent/$DSH_SUPERAGENT_NAME"'], cwd: join(directory, 'work'),
-    env: expect.objectContaining({ DSH_SUPERAGENT_DIR: ticket.execution!.directory, DSH_SUPERAGENT_NAME: ticket.execution!.name, DSH_SUPERAGENT_GITHUB_REPOSITORY: 'acme/widgets', DSH_SUPERAGENT_FEISHU_CHAT: CHAT }) })])
+  expect(runs()).toEqual([expect.objectContaining({ argv: ['sh', '-c', 'git -C /srv/widgets worktree add "$EASEL_SUPERAGENT_DIR" -b "agent/$EASEL_SUPERAGENT_NAME"'], cwd: join(directory, 'work'),
+    env: expect.objectContaining({ EASEL_SUPERAGENT_DIR: ticket.execution!.directory, EASEL_SUPERAGENT_NAME: ticket.execution!.name, EASEL_SUPERAGENT_GITHUB_REPOSITORY: 'acme/widgets', EASEL_SUPERAGENT_FEISHU_CHAT: CHAT }) })])
   // A retry reuses the prepared directory.
   await runTool(`worker-${ticket.id}`, 'orchestrator_report', { state: 'failed', summary: 'offline' })
   await runtime.engine.retryTicket(ticket.id)
@@ -1675,8 +1675,8 @@ it('restarts a worker whose shell job the host stop ended with the recovery note
 it('creates an Executor Session under the bundle\'s worker preset, and the main Session under its router preset', async () => {
   const { sessionId } = await acceptedTicket()
   const created = controller.create.mock.calls.map(([options]) => options as { sessionId: string; agentPreset: string })
-  expect(created.find(options => options.sessionId === sessionId)).toMatchObject({ agentPreset: 'dsh-superagent-worker' })
-  expect(created.find(options => options.sessionId === runtime.masterId)).toMatchObject({ agentPreset: 'dsh-superagent-router' })
+  expect(created.find(options => options.sessionId === sessionId)).toMatchObject({ agentPreset: 'easel-superagent-worker' })
+  expect(created.find(options => options.sessionId === runtime.masterId)).toMatchObject({ agentPreset: 'easel-superagent-router' })
 })
 
 it('selects its own preset again for a main Session or worker a person switched before its first turn, and not after it', async () => {
@@ -1692,14 +1692,14 @@ it('selects its own preset again for a main Session or worker a person switched 
   const emit = (sessionId: string, preset: string) => (runtime as unknown as { ctx: Context }).ctx.emit('agent-preset/selected', sessionId, preset)
   // A person opened the blank main Session in DSH's Web UI, which selected the default preset for it.
   emit(runtime.masterId, 'standard')
-  await vi.waitFor(() => expect(presets.select).toHaveBeenCalledWith(agents.get(runtime.masterId), 'dsh-superagent-router'))
+  await vi.waitFor(() => expect(presets.select).toHaveBeenCalledWith(agents.get(runtime.masterId), 'easel-superagent-router'))
   // Its own preset, which that selection announces the same way, is left alone.
   presets.select.mockClear()
-  emit(runtime.masterId, 'dsh-superagent-router'); await Promise.resolve()
+  emit(runtime.masterId, 'easel-superagent-router'); await Promise.resolve()
   expect(presets.select).not.toHaveBeenCalled()
   emit(sessionId, 'standard')
-  await vi.waitFor(() => expect(presets.select).toHaveBeenCalledWith(agents.get(sessionId), 'dsh-superagent-worker'))
-  // Another Session is not one of dsh-superagent's.
+  await vi.waitFor(() => expect(presets.select).toHaveBeenCalledWith(agents.get(sessionId), 'easel-superagent-worker'))
+  // Another Session is not one of easel-superagent's.
   presets.select.mockClear()
   emit('someone-else', 'standard'); emit('worker-nothing', 'standard'); await Promise.resolve()
   expect(presets.select).not.toHaveBeenCalled()

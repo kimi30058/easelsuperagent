@@ -24,8 +24,8 @@ describe('account-isolated operations', () => {
   it('runs every command with its environment over the process environment, where undefined removes a variable', async () => {
     process.env.GH_TOKEN = 'personal'
     try {
-      const output = await new Commands(() => deployment, { GH_TOKEN: undefined, DSH_SUPERAGENT_PROBE: 'agent' }, new AbortController().signal).run('env', [])
-      expect(output).toContain('DSH_SUPERAGENT_PROBE=agent')
+      const output = await new Commands(() => deployment, { GH_TOKEN: undefined, EASEL_SUPERAGENT_PROBE: 'agent' }, new AbortController().signal).run('env', [])
+      expect(output).toContain('EASEL_SUPERAGENT_PROBE=agent')
       expect(output).not.toContain('GH_TOKEN=')
     } finally { delete process.env.GH_TOKEN }
   })
@@ -34,7 +34,7 @@ describe('account-isolated operations', () => {
   })
   it('reconciles an uncertain GitHub send with its stable marker', async () => {
     const commands = new Commands(() => deployment, {}, new AbortController().signal)
-    vi.spyOn(commands,'pages').mockResolvedValue([{ body:'<!-- dsh-superagent:stable-operation -->',user:{login:'agent-bot'} }])
+    vi.spyOn(commands,'pages').mockResolvedValue([{ body:'<!-- easel-superagent:stable-operation -->',user:{login:'agent-bot'} }])
     const gh = vi.spyOn(commands,'gh')
     await send(commands, reply); expect(gh).not.toHaveBeenCalled()
   })
@@ -43,7 +43,7 @@ describe('account-isolated operations', () => {
     const gh = vi.spyOn(commands,'gh').mockResolvedValue({})
     await send(commands, reply)
     // The disclosure line is prompt text: the model writes it, and the host adds nothing.
-    expect(gh).toHaveBeenCalledWith(['api',`repos/${REPOSITORY}/issues/8/comments`,'--method','POST','-f',expect.stringMatching(/^body=Done\n\n<!-- dsh-superagent:stable-operation -->$/)])
+    expect(gh).toHaveBeenCalledWith(['api',`repos/${REPOSITORY}/issues/8/comments`,'--method','POST','-f',expect.stringMatching(/^body=Done\n\n<!-- easel-superagent:stable-operation -->$/)])
     await expect(new Commands(() => deployment, {}, new AbortController().signal).pages(z.unknown(),
       '../../someone/else/issues')).rejects.toThrow()
   })

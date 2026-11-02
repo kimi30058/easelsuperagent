@@ -1,19 +1,19 @@
 import { expect, it } from 'vitest'
 import type { EffectKind } from '../src/app/effects.ts'
-import { en, zh, type DshSuperagentKey } from '../src/client/locales.ts'
+import { en, zh, type EaselSuperagentKey } from '../src/client/locales.ts'
 import { reasonLabel, type T } from '../src/client/text.ts'
 import { REASONS, USER_ERRORS } from '../src/core/index.ts'
 
 const placeholders = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map(match => match[1]).sort()
 
 it('names the same placeholders in both languages', () => {
-  const keys = Object.keys(zh) as DshSuperagentKey[]
+  const keys = Object.keys(zh) as EaselSuperagentKey[]
   expect(keys.filter(key => placeholders(zh[key]).join() !== placeholders(en[key]).join())).toEqual([])
   expect(keys.filter(key => !zh[key] || !en[key])).toEqual([])
 })
 
 it('words a reason by its code with its values, each of a batch, and words a person or an assessor wrote as written', () => {
-  const t = ((key: DshSuperagentKey, values: Record<string, string> = {}) => (zh[key] ?? key).replace(/\{(\w+)\}/g, (_match, name: string) => values[name] ?? '')) as T
+  const t = ((key: EaselSuperagentKey, values: Record<string, string> = {}) => (zh[key] ?? key).replace(/\{(\w+)\}/g, (_match, name: string) => values[name] ?? '')) as T
   expect(reasonLabel(t, 'retried')).toBe(zh['reason.retried'])
   expect(reasonLabel(t, [{ code: 'routed', values: { ticket: 't1' } }])).toBe('已转给工单 t1')
   expect(reasonLabel(t, [{ code: 'not_a_member', triggerId: '1' }, { code: 'no_mention', triggerId: '2' }]))
@@ -24,8 +24,8 @@ it('words a reason by its code with its values, each of a batch, and words a per
   expect(reasonLabel(t, 'The button is already blue')).toBe('The button is already blue')
 })
 
-it('names every health entry of dsh-superagent itself, which the overview shows when it fails', () => {
-  // Each entry by its writer: dsh-superagent, the model budget retries, every kind of the effect queue, Channel messages, the
+it('names every health entry of easel-superagent itself, which the overview shows when it fails', () => {
+  // Each entry by its writer: easel-superagent, the model budget retries, every kind of the effect queue, Channel messages, the
   // Executor and the unavailable Evals of the last hour.
   const entries = { runtime: 0, models: 0, reply: 0, worker: 0, assessment: 0, launch: 0, delivery: 0, relay: 0,
     notice: 0, evals: 0 } satisfies Record<EffectKind | 'runtime' | 'models' | 'reply' | 'worker' | 'evals', 0>
@@ -33,8 +33,8 @@ it('names every health entry of dsh-superagent itself, which the overview shows 
 })
 
 it('words every refusal the host words by code, in both languages', () => {
-  expect(Object.keys(USER_ERRORS).filter(code => !zh[`userError.${code}` as DshSuperagentKey]
-    || !en[`userError.${code}` as DshSuperagentKey])).toEqual([])
+  expect(Object.keys(USER_ERRORS).filter(code => !zh[`userError.${code}` as EaselSuperagentKey]
+    || !en[`userError.${code}` as EaselSuperagentKey])).toEqual([])
 })
 
 it('has words for every reason code the core records', () => {

@@ -1,4 +1,4 @@
-/** Application composition root and lifecycle manager for dsh-superagent. */
+/** Application composition root and lifecycle manager for easel-superagent. */
 import { Service, type Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session'
@@ -47,12 +47,12 @@ import type { ResourceHost } from './resources.ts'
 import { mainTools, type MainToolsHost } from './tools/main.ts'
 import { executorTools, type ExecutorToolsHost } from './tools/executor.ts'
 
-// Source plugins interact with dsh-superagent exclusively through the `SourceHost` service interface.
+// Source plugins interact with easel-superagent exclusively through the `SourceHost` service interface.
 declare module '@deepseek-ai/cordis' { interface Context { orchestrator: SourceHost } }
 const now = (): string => new Date().toISOString()
 
 /**
- * Composition root of dsh-superagent that connects `Store`, `Setup`, `Engine`, `SourceRegistry`, `Effects`, `Outbox`, `Passes`, `Sessions`, `Settings`, `Prompts`, `DshExecutor`, and `MasterAssessor`.
+ * Composition root of easel-superagent that connects `Store`, `Setup`, `Engine`, `SourceRegistry`, `Effects`, `Outbox`, `Passes`, `Sessions`, `Settings`, `Prompts`, `DshExecutor`, and `MasterAssessor`.
  * Exposes the `SourceHost` service on the Cordis context for source plugins and coordinates startup, setup checks, HTTP route registration, and graceful shutdown.
  * Locks the state directory before opening SQLite so concurrent processes cannot corrupt or double-migrate state.
  */
@@ -94,7 +94,7 @@ export class Runtime extends Service implements SourceHost {
     this.releaseLock = async () => { release() }
     let opened: Store | undefined
     try {
-      const report = (error: unknown) => { ctx.logger.warn('dsh-superagent: %s', String(error)) }
+      const report = (error: unknown) => { ctx.logger.warn('easel-superagent: %s', String(error)) }
       const store = opened = this.store = new Store(join(machine.stateDir, 'orchestrator.sqlite'), report)
       const setup = this.setup = new Setup({ context: ctx, machine, lifetime: this.lifetime, restart })
       const deployed = () => setup.configured()
@@ -171,7 +171,7 @@ export class Runtime extends Service implements SourceHost {
     }
   }
   get health(): Readonly<Record<string, Health>> { return this.board.all }
-  /** Aborted when dsh-superagent stops or loses its state directory lock, cancelling running reads and subprocesses. */
+  /** Aborted when easel-superagent stops or loses its state directory lock, cancelling running reads and subprocesses. */
   get lifetime(): AbortSignal { return this.stopped.signal }
   context(kind: { kind: string; health: readonly string[] }): SourceContext { return sourceContextOf(this.sourceDeps, kind) }
   /** Resolved deployment; throws while waiting for setup (`!configured()`). */
@@ -207,7 +207,7 @@ export class Runtime extends Service implements SourceHost {
     }
     this.sessions.install()
     this.executor.install()
-    await this.sessions.ensure(this.masterId, this.machine.stateDir, 'dsh-superagent orchestrator', 'orchestrator')
+    await this.sessions.ensure(this.masterId, this.machine.stateDir, 'easel-superagent orchestrator', 'orchestrator')
     for (const id of this.settings.syncable()) await this.settings.sync(id).catch(() => { /* sync() records its failure in health. */ })
     // If stop() was called while awaiting setup, session creation, or policy sync, do not start background loops.
     if (this.closing()) return
@@ -245,7 +245,7 @@ export class Runtime extends Service implements SourceHost {
       // Close the database before releasing the directory lock so another process cannot open the database mid-write; a compromised lock may already be released.
       this.setup.restore()
       try { this.store.close() } finally {
-        const unreleased = (error: unknown) => { this.ctx.logger.warn('dsh-superagent could not release its state directory lock: %s',
+        const unreleased = (error: unknown) => { this.ctx.logger.warn('easel-superagent could not release its state directory lock: %s',
           String(error)) }
         await this.releaseLock?.().catch(unreleased)
       }

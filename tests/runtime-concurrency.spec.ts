@@ -83,7 +83,7 @@ it('drops a delivery whose ticket a person stopped while it waited for the worke
 
 it('runs prepare commands in the background, side by side, while accepts, intake and passes go on', async () => {
   const settings = h.runtime.store.settings()
-  h.runtime.store.saveSettings({ ...settings, executor: { ...settings.executor, prepare: 'git -C /srv/widgets worktree add "$DSH_SUPERAGENT_DIR"' } })
+  h.runtime.store.saveSettings({ ...settings, executor: { ...settings.executor, prepare: 'git -C /srv/widgets worktree add "$EASEL_SUPERAGENT_DIR"' } })
   const prepare = deferred()
   h.hooks.prepare = prepare.promise
   const prepares = () => h.subprocess.spawn.mock.calls.filter(([spec]) => spec.argv[0] === 'sh').length
@@ -555,7 +555,7 @@ describe('a worker whose work runs in the background', () => {
     await h.runtime.idle()
     expect(reports()).toBe(reported)
   })
-  it('collects the end of a job left to a person until dsh-superagent stopped its workers', async () => {
+  it('collects the end of a job left to a person until easel-superagent stopped its workers', async () => {
     const one = await handsOff({ state: 'blocked', summary: 'Which color?' })
     const agent = h.agents.get(one.sessionId)!
     const server = h.jobs.run(one.sessionId, 'pnpm dev')
@@ -570,7 +570,7 @@ describe('a worker whose work runs in the background', () => {
     expect(agent.followup.mock.calls.length).toBe(woken)
     expect(agent.status).toBe('idle')
   })
-  it('stops every worker\'s jobs and subagents when dsh-superagent stops, before it releases their tool limits', async () => {
+  it('stops every worker\'s jobs and subagents when easel-superagent stops, before it releases their tool limits', async () => {
     const one = await h.acceptedTicket(feishu('1', '@bot 修一'))
     const job = h.jobs.run(one.sessionId), child = h.subagents.spawn(one.sessionId)
     await h.stop()

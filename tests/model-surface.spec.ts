@@ -319,7 +319,7 @@ function failures(): Map<string, string> {
     }
     for (const [word, pattern] of LEGACY) if (pattern.test(text)) fail(`legacy word "${word}"`)
     for (const [rule, scope, phrase] of BANNED) if (scope.test(where) && phrase.test(text)) fail(`breaks "${rule}"`)
-    for (const [name] of text.matchAll(/\bDSH_SUPERAGENT_[A-Z][A-Z_]*[A-Z]\b/g)) if (!variables.has(name)) fail(`${name} is not a variable`)
+    for (const [name] of text.matchAll(/\bEASEL_SUPERAGENT_[A-Z][A-Z_]*[A-Z]\b/g)) if (!variables.has(name)) fail(`${name} is not a variable`)
     // A ticket's or worker's state is a card state; a report state is named with the word report.
     const states = [...text.matchAll(/\b([a-z]+(?:\/[a-z]+)*) (?:tickets?|workers?)\b/g), ...text.matchAll(/\b(?:tickets?|workers?) (?:is|are)(?: still)? ([a-z]+)\b/g)]
     for (const [phrase, word] of states) {
@@ -357,7 +357,7 @@ it('collects both roles\' tools, prompts, skills and inputs', () => {
     expect(toolsOf('orchestrator').has(name)).toBe(false)
   }
   const wheres = new Set(surfaces.map(surface => surface.where))
-  for (const where of ['orchestrator prompt runtime/dispatch', 'worker prompt runtime/work', 'skill dsh-superagent-github', 'skill dsh-superagent-feishu',
+  for (const where of ['orchestrator prompt runtime/dispatch', 'worker prompt runtime/work', 'skill easel-superagent-github', 'skill easel-superagent-feishu',
     'orchestrator prompt runtime/admission', 'orchestrator input candidate', 'orchestrator input worker_attention', 'orchestrator input worker_report',
     'orchestrator input thread_unrelated', 'orchestrator input ticket_ended', 'orchestrator input settings_saved', 'worker input assignment (explicit)',
     'worker input assignment (inferred)', 'worker input policy-changed', 'worker input resumed', 'worker input status',
