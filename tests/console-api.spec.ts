@@ -43,6 +43,15 @@ function host() {
   return { store, engine }
 }
 
+/** Send a console request and decide its held candidate as the main Session would, returning the accepted ticket's id. */
+async function ticketFromRequest(h: ReturnType<typeof host>, call: ReturnType<typeof serve>, text: string) {
+  const { body } = await call('POST', 'console/threads', { text })
+  const triggerId = body.trigger as string
+  const accept: Outcome = { kind: 'accept', title: text, scope: 'small', reason: 'requested',
+    acknowledgement: 'ok', evalId: h.engine.candidate(triggerId)?.evalId }
+  return h.engine.decide(triggerId, accept).ticketId!
+}
+
 it('creates a console thread, and a retried send with the same message id is a duplicate', async () => {
   const h = host()
   const call = serve({ store: h.store, engine: h.engine, requestPass: () => {} })
@@ -60,12 +69,7 @@ it('creates a console thread, and a retried send with the same message id is a d
 it('injects an operator message that releases a blocked ticket', async () => {
   const h = host()
   const call = serve({ store: h.store, engine: h.engine, requestPass: () => {} })
-  const { body } = await call('POST', 'console/threads', { text: '写一篇小红书帖子' })
-  // The assessor stands still, so the test decides the held candidate itself, as the main Session would.
-  const triggerId = body.trigger as string
-  const accept: Outcome = { kind: 'accept', title: '写一篇小红书帖子', scope: 'small', reason: 'requested',
-    acknowledgement: 'ok', evalId: h.engine.candidate(triggerId)?.evalId }
-  const ticketId = h.engine.decide(triggerId, accept).ticketId!
+  const ticketId = await ticketFromRequest(h, call, '写一篇小红书帖子')
   h.engine.report(ticketId, { state: 'blocked', summary: '等待发布确认' })
   expect(ticketStage(h.store.tickets.get(ticketId)!)).toEqual({ stage: 'person', action: 'blocked' })
   // The gate message must arrive after the blocked report, so the follow-up counts as new.
@@ -77,6 +81,19 @@ it('injects an operator message that releases a blocked ticket', async () => {
   expect(input.kind === 'trigger' && input.human).toBe(true) // 人工消息不被持有
   expect(after.undelivered).toContain(input.id)
   expect(ticketStage(after)).not.toEqual({ stage: 'person', action: 'blocked' }) // the stage leaves blocked
+  h.store.close()
+})
+
+it('answers a retried gate message as a duplicate without attaching it again', async () => {
+  const h = host()
+  const call = serve({ store: h.store, engine: h.engine, requestPass: () => {} })
+  const ticketId = await ticketFromRequest(h, call, '写一篇小红书帖子')
+  const sent = await call('POST', `tickets/${ticketId}/message`, { text: '发布', id: 'g3' })
+  expect(sent).toMatchObject({ status: 200, body: { received: 'stored', attached: true } })
+  const before = h.store.tickets.get(ticketId)!.inputs
+  const retried = await call('POST', `tickets/${ticketId}/message`, { text: '发布', id: 'g3' })
+  expect(retried).toMatchObject({ status: 200, body: { received: 'duplicate', attached: false } })
+  expect(h.store.tickets.get(ticketId)!.inputs).toEqual(before) // the ticket's inputs did not grow
   h.store.close()
 })
 

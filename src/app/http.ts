@@ -220,9 +220,10 @@ function routes(runtime: HttpHost): Routes {
       const { text, id: messageId } = ConsoleMessage.parse(await body())
       const trigger = consoleTrigger({ id: messageId, thread: `ticket-${id}`, text, at: new Date().toISOString() })
       const received = runtime.engine.receive(trigger)
-      runtime.engine.attach(id, trigger.id)
+      // A retried message id reached the ticket with its first delivery; attaching it again would trip the worker-decides guard.
+      if (received === 'stored') runtime.engine.attach(id, trigger.id)
       runtime.requestPass()
-      return { received, trigger: trigger.id, attached: true }
+      return { received, trigger: trigger.id, attached: received === 'stored' }
     },
     'POST executor/pause': async ({ body }) => runtime.settings.pause(z.object({ paused: z.boolean() }).parse(await body()).paused, 'panel'),
     'PUT settings/:block': async ({ params, body }) => {
