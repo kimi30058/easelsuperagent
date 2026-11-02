@@ -1,5 +1,6 @@
 /** Console shell: hash-routed sidebar over the shared panel views, with its own words, offline bar, and Session links. */
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { usePoll } from '../client/api.ts'
 import { EvalStatus } from '../client/eval.tsx'
 import { ExecutionStatus } from '../client/execution.tsx'
 import { en, zh, type EaselSuperagentKey } from '../client/locales.ts'
@@ -12,6 +13,7 @@ import type { T } from '../client/text.ts'
 import { ThreadPage } from '../client/thread.tsx'
 import { TicketPage } from '../client/ticket.tsx'
 import { TriggerStatus } from '../client/trigger.tsx'
+import { GateActions, MessagesPage } from './inbox.tsx'
 
 /** The console's own translator: the zh words unless the browser asks for English. */
 function consoleText(): T {
@@ -52,6 +54,13 @@ function useHashRoute(): { route: Route; navigate: PanelContext['navigate'] } {
 
 const NAV = [['overview', 'tab.overview'], ['messages', 'nav.messages'], ['execution', 'tab.execution'], ['calendar', 'nav.calendar'], ['personas', 'nav.personas'], ['skills', 'nav.skills'], ['trigger', 'tab.trigger'], ['eval', 'tab.eval'], ['settings', 'tab.settings']] as const
 
+/** The execution detail: the publish gate above the shared ticket page, each reading the Ticket its own way. */
+function TicketWithGate({ id }: { id: string }) {
+  const { call } = usePanel()
+  const { data } = usePoll(() => call('GET tickets/:id', { id }), [id])
+  return <>{data && <GateActions ticket={data} />}<TicketPage id={id} /></>
+}
+
 /** The active page over the shared views; the console's own pages arrive with the content views and hold a place for now. */
 function Page({ route }: { route: Route }) {
   const { t } = usePanel()
@@ -64,11 +73,12 @@ function Page({ route }: { route: Route }) {
       : <TriggerStatus filter={route.query?.filter ?? 'subscribed'} />
     case 'eval': return <EvalStatus filter={route.query?.filter ?? 'work'} window={route.query?.window}
       paused={!!state?.paused} />
-    case 'execution': return route.id !== undefined ? <TicketPage key={route.id} id={route.id} />
+    case 'execution': return route.id !== undefined ? <TicketWithGate key={route.id} id={route.id} />
       : state ? <ExecutionStatus filter={route.query?.filter ?? 'open'} state={state} reload={reload} /> : waiting
     case 'settings': return state ? <SettingsPage key={state.masterId} group={route.query.group} query={route.query}
       state={state} deploymentForm={undefined} /> : waiting
-    case 'messages': case 'calendar': case 'personas': case 'skills': return <p>{t('console.emptyCalendar')}</p>
+    case 'messages': return <MessagesPage key={route.id} id={route.id} />
+    case 'calendar': case 'personas': case 'skills': return <p>{t('console.emptyCalendar')}</p>
   }
 }
 
@@ -78,7 +88,7 @@ function ConsoleShell({ route }: { route: Route }) {
   const { error } = usePanelData()
   const current = NAV.find(([page]) => page === route.page)
   return <div className="console-shell">
-    <nav className="console-nav" aria-label="主导航">
+    <nav className="console-nav" aria-label={t('console.navLabel')}>
       <div className="console-brand">easel<span>superagent</span></div>
       <h1>{t('console.title')}</h1>
       {NAV.map(([page, key]) => <a key={page} href={`#/${page}`}
@@ -98,7 +108,7 @@ export function ConsoleApp(): JSX.Element {
   const back = useCallback(() => history.back(), [])
   // The console runs beside DSH, which owns the Sessions; opening one shows its page there.
   const openSession = useCallback(async () => { window.open('http://127.0.0.1:3082/', '_blank', 'noopener') }, [])
-  return <PanelProvider t={t} navigate={navigate} back={back} openSession={openSession}>
+  return <PanelProvider t={t} navigate={navigate} back={back} openSession={openSession} backLabel={t('console.back')}>
     <ConsoleShell route={route} />
   </PanelProvider>
 }

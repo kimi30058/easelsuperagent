@@ -128,6 +128,8 @@ const TEXT = {
   'console.refusePublish': ['拒绝发布', 'Refuse'],
   'console.followUp': ['继续对话…', 'Follow up…'],
   'console.emptyCalendar': ['还没有排期记录', 'No calendar records yet'],
+  'console.back': ['返回', 'Back'],
+  'console.navLabel': ['主导航', 'Main navigation'],
   // Overview
   sourceError: ['{source} 来源异常', '{source} Source failing'],
   needsYouNone: ['没有待处理的工单。', 'No pending Tickets.'],
