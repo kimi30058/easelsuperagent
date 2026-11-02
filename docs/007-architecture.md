@@ -351,6 +351,7 @@ Some generic modules still refer directly to GitHub or Feishu:
 | `src/app/views/sources.ts` | The Source status: each Source instance's state, its last day's counts, and what it filtered and dropped in that day |
 | `src/app/views/settings.ts` | The settings page's view: each block with its revision, each Source's settings with its kind's form, and the execution environment |
 | `src/app/views/overview.ts` | The overview: Tickets that need a person, problems, the last day's flow and the Executor's load |
+| `src/app/views/console.ts` | The console's read-only views over the execution root and the packaged skill library: the recorded calendar (`outputs/_schedule.json`), the persona directories (`profiles/`), the builtin skills' frontmatter, and a Ticket's reported deliverables checked inside its workspace |
 | `src/executor/dsh.ts` | The DshExecutor, `WorkerSlots`, `ticketExecution`, `inputMessage` and `mandateInstructions` |
 | `src/executor/background.ts` | A worker's background work in DeepSeek Harness, the shell jobs its Session owns (`ctx.jobs`) and its subagents (`ctx.subagents`): `runningJobs`, `untilQuiet`, `killJobs`, `collectJobs`, `stopSubagents`, `stopBackground`, `until`, and `cancelled`, the workers whose turn a stop of their subagents cancelled |
 | `src/infra/commands.ts` | `Commands`, the CLI transport: `run`; `api` and `pages`, limited to the configured repository and validated; `lark` as the bot; `git`. `CliError` carries the code a command's output reports, such as a GitHub HTTP status, and a command that prints nothing fails with how it ended, never with its arguments; `validItems` skips and counts the malformed items of a list |
@@ -362,6 +363,7 @@ Some generic modules still refer directly to GitHub or Feishu:
 | `src/sources/registry.ts` | `SourceRegistry` |
 | `src/sources/host.ts` | `SourceHost`, `SourceContext`, `Health`, `health` and the fixed health texts |
 | `src/sources/poll.ts` | What GitHub and Feishu polling share: `POLL_HORIZON_MS`, `polled`, `cursorAt`, and `pollThreads`, which keeps a failure on its Thread as `pollError` |
+| `src/sources/console.ts` | The console Source kind: `consoleTrigger`, the operator's page message as an explicit human Trigger, and a Channel whose sends answer `sent`, because the page polls the Outbox's receipts |
 | `src/sources/feishu.ts` | The Feishu kind and plugin entry, exported as `./feishu-watch` |
 | `src/sources/feishu-trigger.ts` | Feishu messages as Triggers, by one rule for live events, history pages and topic pages |
 | `src/sources/feishu-loops.ts` | The Feishu loops: the event consumer, history recovery, chat names and polling of subscribed topics |
@@ -391,6 +393,12 @@ Some generic modules still refer directly to GitHub or Feishu:
 | `src/client/marks.ts` | The marks of the states the views classify: a Ticket's or a Thread's stage, a Source's state and a Decision's outcome, each as a dot, an icon, a tone and a label |
 | `src/client/locales.ts` | All copy in both languages, and the glossary of [001 Domain model](001-domain.md) |
 | `src/client/client.css`, `css.d.ts` | The panel's stylesheet, loaded as text |
+| `src/console/server.ts` | `ConsoleServer`, the console's loopback sidecar: it serves the page and its bundle and proxies `/orchestrator/api` to the orchestrator server-side, so the panel's same-origin contract holds |
+| `src/console/index.html`, `console.css` | The console page's shell, served by the sidecar, and the skin the entry injects over the shared panel styles |
+| `src/console/client-entry.tsx` | The console bundle's entry, which injects the skin and mounts the shell |
+| `src/console/shell.tsx` | `ConsoleApp`, the console shell: its own words and hash routing wrapped around the shared panel state and views, with the sidebar navigation and the offline bar |
+| `src/console/inbox.tsx` | The console inbox: recent Threads of every source with the compose that starts a request, a console Thread's follow-up compose, and `GateActions`, the publish gate's two answers |
+| `src/console/content.tsx` | The console content pages: the calendar's records as recorded, grouped by date, and the workspace's personas and skills |
 
 `src/sources/feishu.ts` is also the entry of the Feishu Source plugin, built by `tsdown.config.ts` and exported in `package.json` as `./feishu-watch`. The bundle's `cordis.patch.yml` inserts it, disabled by default.
 
@@ -404,6 +412,7 @@ Some generic modules still refer directly to GitHub or Feishu:
 | `tests/feishu-read.spec.ts` | Feishu reads |
 | `tests/registry.spec.ts` | `SourceRegistry`: instances, validation, Policy parts, Channels and Thread context |
 | `tests/sources.spec.ts` | The Feishu and GitHub Sources on a `SourceContext`: translation, polls and read positions, the pull request rules, health |
+| `tests/console-source.spec.ts` | The console Source: its explicit human Trigger, the baked operator its policy admits without configuration, and an operator message taken in as a candidate through the real Engine |
 | `tests/commands.spec.ts` | CLI calls as the deployment's accounts, the Channels' answers, and repository-scoped GitHub calls |
 | `tests/admission-context.spec.ts`, `tests/feishu-image.spec.ts` | The Thread window of assessments, and Feishu image reads |
 | `tests/assessment.spec.ts` | What the MasterAssessor keeps per Eval, and when it lets go |
@@ -422,6 +431,8 @@ Some generic modules still refer directly to GitHub or Feishu:
 | `tests/tools.spec.ts` | The Sessions' tools: what `orchestrator_read` reads for each role, and the shapes and checks of the other main Session tools |
 | `tests/runtime-concurrency.spec.ts` | Work that overlaps: Triggers during a pass, Tickets that change during deliveries and launches |
 | `tests/http.spec.ts` | The same-origin and loopback checks, the status of each kind of failure, the body limit, path parameters and queries |
+| `tests/console-api.spec.ts` | The console endpoints: a new thread and a follow-up, the duplicate answer of a retried message id, the operator message that releases a blocked Ticket, and the calendar, personas, skills and deliverables the views read |
+| `tests/console-server.spec.ts` | The console sidecar: the loopback page and bundle routes, and the proxy that forwards to the orchestrator and reports it unreachable |
 | `tests/settings.spec.ts` | Settings saves that race a model or account check, a Policy sync that a save outran, and the refusals of the pause, a sync and a block |
 | `tests/views.spec.ts` | What the management views derive from the Store, such as the Thread a dropped message belongs to |
 | `tests/timeline.spec.ts` | A Thread's pages and a Trigger's neighbours by time and then id, with every received Trigger's time in one form |
@@ -438,6 +449,8 @@ Some generic modules still refer directly to GitHub or Feishu:
 | `tests/client.spec.tsx`, `tests/navigation.spec.ts`, `tests/controls.spec.tsx` | The client plugin's registration and polling, Session navigation and route memory, the local controls, and the panel's imports, which have no cycle |
 | `tests/panel-overview.spec.tsx`, `panel-source.spec.tsx`, `panel-trigger.spec.tsx`, `panel-eval.spec.tsx`, `panel-execution.spec.tsx` | Each page of the panel, against a fake management API answered by route |
 | `tests/panel-settings.spec.tsx`, `panel-prompts.spec.tsx`, `panel-deployment.spec.tsx`, `panel-panel.spec.tsx` | The settings groups, drafts and history, the prompts, the Deployment page, and the panel's search, glossary and route memory |
+| `tests/console-shell.spec.tsx` | The console shell: the sidebar over the shared views, hash routing in both directions, the offline bar, and English when the browser asks for it |
+| `tests/console-inbox.spec.tsx`, `tests/console-content.spec.tsx` | The console inbox and content pages: the composes with the message id each retry reuses, the badge of console-born Threads, the Threads of other sources read-only, the publish gate's answers by stage, and the calendar, personas and skills |
 | `tests/draft.spec.ts`, `tests/prompt-config.spec.ts`, `tests/markdown.spec.ts`, `tests/marks.spec.ts` | Draft states, merges and the save bar's line; the prompt configuration by section and the line diff; the Markdown subset and its links; the mark of every state the views classify |
 | `tests/locales.spec.ts`, `tests/styles.spec.ts` | The copy in both languages, the stylesheet |
 | `tests/class-docs.spec.ts` | Every class in `src` has a JSDoc block before it |
