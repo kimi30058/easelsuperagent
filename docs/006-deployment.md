@@ -108,6 +108,8 @@ scripts/easel-superagent status
 
 `stop` and `restart` request graceful shutdown and wait up to five minutes for Executors. They never force-kill the process or touch other tmux sessions.
 
+`start` also manages a second process, the console sidecar (`node lib/console-server.js`), in tmux window `console` of the same session, with its pid in `console.pid` beside `service.pid`. It serves the console, the operator's main UI (ADR-0006), at `http://127.0.0.1:3083`; override with `--console-url` or `CONSOLE_URL` after changing its port. `stop` stops both, and `status` reports the sidecar under `console`.
+
 `status` prints process ids, health and setup problems. For a different profile or port, use `--profile` and `--url`, or set `EASEL_SUPERAGENT_PROFILE` and `EASEL_SUPERAGENT_URL`.
 
 `status`, `start` and `restart` exit with one of four codes:
@@ -116,7 +118,7 @@ scripts/easel-superagent status
 | --- | --- |
 | 0 | The service runs normally |
 | 1 | It does not run, runs twice, does not answer, or its runtime reports an error; a restart may fix it |
-| 2 | It runs, but a part other than the runtime, such as a Source or a Policy sync (`sync:<source id>`), reports an error; a restart does not fix it |
+| 2 | It runs, but a part other than the runtime, such as a Source, a Policy sync (`sync:<source id>`) or the console sidecar (`console: sidecar unreachable`), reports an error; a restart does not fix it |
 | 3 | It runs and waits for setup; a restart does not fix it |
 
 A Source that is still starting counts as normal operation. So does a Feishu bot that setup could not check.
@@ -126,9 +128,9 @@ A Source that is still starting counts as normal operation. So does a Feishu bot
 Each profile stores logs and control files under `.artifacts/`:
 
 - Startup logs: `easel-superagent-<profile>-<date>-<time>-<pid>.log`, where the pid belongs to the script. The newest 20 are kept.
-- Control files: `control/profiles/<profile>/`, containing the stop marker, lock and process id.
+- Control files: `control/profiles/<profile>/`, containing the stop marker, lock and process ids.
 
-Open the URL printed in the log, then choose **Superagent** in the sidebar.
+Open the console, `http://127.0.0.1:3083` by default; the DeepSeek Harness panel at the URL printed in the log remains a debug surface.
 
 ### Hourly check
 
@@ -264,6 +266,7 @@ Setup problems appear on the overview with a link to the fix, in the panel's lan
 | `The bot lark-cli does not work.` or `The bot identity of app … is …` | Check the configuration's app id and secret |
 | `The Feishu bot is not a member of the chat.` | Add the bot to the chat in the chat's settings; the next attempt succeeds |
 | `status` exits 2 | A part reports an error, which a restart does not fix: `errors` names each part, as listed under Management API, with its detail; each part clears its own entry once it works again |
+| The console does not open while the main service is healthy | The sidecar is down: check `console.pid` in the profile's control directory and tmux window `console`, then run `scripts/easel-superagent restart` |
 | `status` exits 3 | Setup waits: `setup` says what is missing, and the overview links to the setting that fixes it |
 | `status` exits 1 | The service does not run, runs twice, does not answer, or its runtime reports an error; the output and the newest log say which |
 | `… timed out after 90 s`, `… was stopped by …`, `… exited with code …` or `… could not run: …` | A CLI failed without printing why; run the named program by hand as the operator's user to see its own message |
