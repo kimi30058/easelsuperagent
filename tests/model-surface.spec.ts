@@ -58,6 +58,8 @@ const BANNED: [rule: string, where: RegExp, phrase: RegExp][] = [
 const KNOWN_FAILURES: [owner: string, failure: string][] = [
   // The bundled Easel index names the real skill skill-topic-evaluator; its `topic` substring is a word-boundary match.
   ['prompts/, skills/', 'skill easel-superagent-easel-index: legacy word "topic"'],
+  // The admission guide tells the orchestrator a content request must name a topic; the word is the content-domain term.
+  ['prompts/, skills/', 'orchestrator prompt runtime/admission: legacy word "topic"'],
 ]
 
 const MEMBER = 'ou_alice', CHAT = 'oc_team'

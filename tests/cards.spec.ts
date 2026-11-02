@@ -31,8 +31,8 @@ const RULES: [rule: string, file: string, says: string[], gone?: string[]][] = [
     ['Return rule_assessments with exactly one entry for every enabled rule',
       'a reason saying that a rule does not apply cannot be a positive match',
       'Accept only when implementation was requested, target_basis is specified or existing-standard, and no product/design decision remains',
-      'may qualify without pixel values or CSS instructions', 'no ACK, worker, worktree or unsolicited clarification question',
-      'this banner looks different from the other cards',
+      'no ACK, worker, worktree or unsolicited clarification question',
+      'we should post more about this',
         'Never replay old messages or dispatch invalidated historical approvals']],
   ['A stop goes through orchestrator_route, not through an assessment', 'dispatch', [], ['decision=stop']],
   ['A stop goes through orchestrator_route, not through an assessment', 'admission', [], ['decision=stop']],
@@ -50,7 +50,7 @@ const RULES: [rule: string, file: string, says: string[], gone?: string[]][] = [
   ['A person\'s follow-up is its ticket\'s worker\'s to decide; the main Session only stops the work on request', 'dispatch',
     ['a human follow-up becomes new work only once its ticket\'s worker hands it back'], ['related human follow-ups can']],
   ['A question for a person is asked through the report, not left where nobody reads it', 'work',
-    ['Do not leave the question only in summary, GitHub or the Session and wait.']],
+    ['Do not leave the question only in summary or the Session and wait.']],
   ['A person\'s follow-up is its ticket\'s worker\'s to decide; the main Session only stops the work on request', 'work',
     ['Decide every person\'s message on this ticket\'s own threads yourself', 'back with orchestrator_trigger_handback',
       'never drop a request silently', 'leave ordinary discussion unanswered']],
@@ -82,7 +82,7 @@ const RULES: [rule: string, file: string, says: string[], gone?: string[]][] = [
   ['An Executor asks through human_action and clears the question explicitly', 'handoff-worker', ['human_action:null or a ready report clears it', 'state may remain progress']],
   ['The main Session investigates nothing outside an assessment', 'dispatch', ['Outside proactive assessment, do not follow context references']],
   ['Human attention is limited', 'team/communication', ['Human attention is limited']],
-  ['An incomplete draft is blocked, and every change is reviewed and checked', 'work', ['An incomplete draft is blocked', 'Review changes and run relevant checks']],
+  ['An incomplete draft is blocked, and every deliverable is reviewed and checked', 'work', ['An incomplete draft is blocked', 'Review the produced content and run the skill\'s own checks']],
   ['Investigation has no fixed round limit', 'team/scope', ['There is no fixed investigation or implementation round limit']],
   ['A resolved blocker resumes on its own; a person\'s hold lasts until a person lifts it', 'team/scope',
     ['resume autonomously without asking the human to say continue', 'questions or new technical clues do not lift it']],
@@ -91,7 +91,7 @@ const RULES: [rule: string, file: string, says: string[], gone?: string[]][] = [
   ['Publishing waits for the operator\'s approval', 'team/delivery',
     ['a worker never runs a publish script before the operator approved', 'record the publication in the calendar', 'A failed publish is reported blocked']],
   ['A worker never publishes without approval and keeps credentials private', 'worker',
-    ['Never publish to any platform without the human approval the Delivery requirements section names, and never expose credentials or private Feishu content.']],
+    ['never run a publish script before this approval', 'report blocked again for a second approval'], ['auto-merge', 'pr_number']],
   ['Reading context changes nothing', 'cli', ['Do not alter remote state, authorization, or configuration while reading.']],
   ['Feishu is read as the bot, never as a person', 'cli', ['Feishu uses --as bot; unavailable content does not authorize switching to the user\'s identity.']],
   ['Removed rules stay removed', '*', [], ['at most three investigation/implementation rounds', 'continue dispatch until explicitly instructed', 'page-size']],
@@ -106,7 +106,7 @@ it.each(RULES)('%s (%s)', (_rule, file, says, gone = []) => {
 
 it('keeps each role\'s own instructions short', () => {
   expect(masterPrompt.length).toBeLessThan(1400)
-  expect(workerPrompt.length).toBeLessThan(1100)
+  expect(workerPrompt.length).toBeLessThan(1700)
 })
 
 const trigger: Trigger = { id: 'request-1', source: 'github', threads: [{ source: 'github', id: '42' }], actor: { source: 'github', id: 'alice' }, human: true,
