@@ -1329,6 +1329,21 @@ it('gives an explicit ticket\'s worker a prompt without the limits of an inferre
   expect(sections.get(sessionId)!.text({})).not.toContain(mandateInstructions({ strength: 'inferred' }))
 })
 
+it('runs the prepare command once for a new ticket, under the execution root with the ticket\'s environment', async () => {
+  const prepare = (command: string) => runtime.store.saveSettings({ ...runtime.store.settings(), executor: { ...runtime.store.settings().executor, prepare: command } })
+  const runs = () => subprocess.spawn.mock.calls.map(([spec]) => spec as { argv: string[]; cwd: string; env?: Record<string, string> }).filter(spec => spec.argv[0] === 'sh')
+  // The command Easel tickets are prepared with: a script that reads the ticket's variables, run from the execution root.
+  prepare('easel-prepare "$EASEL_SUPERAGENT_NAME"')
+  const { ticket } = await acceptedTicket()
+  expect(runs()).toEqual([expect.objectContaining({ argv: ['sh', '-c', 'easel-prepare "$EASEL_SUPERAGENT_NAME"'], cwd: join(directory, 'work'),
+    env: expect.objectContaining({ EASEL_SUPERAGENT_DIR: ticket.execution!.directory, EASEL_SUPERAGENT_NAME: ticket.execution!.name, EASEL_SUPERAGENT_TICKET: ticket.id, EASEL_SUPERAGENT_FEISHU_CHAT: CHAT }) })])
+  // A retry reuses the prepared directory.
+  await runTool(`worker-${ticket.id}`, 'orchestrator_report', { state: 'failed', summary: 'offline' })
+  await runtime.engine.retryTicket(ticket.id)
+  await runtime.idle()
+  expect(runs()).toHaveLength(1)
+})
+
 it('runs a launch that fails for a passing reason again on the launch backoff three times, then fails its ticket; a failed prepare fails at once', async () => {
   const original = controller.resolveAgent.getMockImplementation()! as (id: string) => Promise<unknown>
   const later = async (now: number) => {
