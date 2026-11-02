@@ -13,7 +13,9 @@ export class ConsoleServer {
     const config: Required<ConsoleServerOptions> = { port: options.port ?? Number(process.env.CONSOLE_PORT ?? 3083), host: '127.0.0.1',
       upstream: options.upstream ?? process.env.EASEL_SUPERAGENT_URL ?? 'http://127.0.0.1:3082',
       staticDir: options.staticDir ?? join(dirname(fileURLToPath(import.meta.url)), 'console') }
-    const server = createServer((req, res) => void handle(config, req, res))
+    // A request that fails (a client aborting mid-body, an unparseable URL) destroys its socket instead of rejecting
+    // an unhandled promise and taking the process down.
+    const server = createServer((req, res) => void handle(config, req, res).catch(() => res.destroy()))
     await new Promise<void>(resolve => server.listen(config.port, config.host, resolve))
     return new ConsoleServer(server, `http://127.0.0.1:${(server.address() as { port: number }).port}`)
   }
@@ -33,8 +35,9 @@ async function handle(config: Required<ConsoleServerOptions>, req: IncomingMessa
   if (url.pathname.startsWith('/orchestrator/api/')) {
     const headers: Record<string, string> = { 'x-orchestrator-request': '1' } // 不透传 Origin/Host：服务端请求无浏览器origin
     if (req.headers['content-type']) headers['content-type'] = String(req.headers['content-type'])
-    const chunks: Buffer[] = []; for await (const chunk of req) chunks.push(Buffer.from(chunk))
     try {
+      // The body is buffered inside the guard: a client aborting mid-body rejects the iterator here, not at the process level.
+      const chunks: Buffer[] = []; for await (const chunk of req) chunks.push(Buffer.from(chunk))
       const upstream = await fetch(config.upstream + url.pathname + url.search,
         { method: req.method, headers, body: chunks.length ? Buffer.concat(chunks) : undefined })
       return send(res, upstream.status, 'application/json; charset=utf-8', await upstream.text(), 'no-store')

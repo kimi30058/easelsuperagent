@@ -56,3 +56,25 @@ it('serves the console bundle as javascript', async () => {
   expect(await bundle.text()).toBe('export default 1')
   await server.close()
 })
+
+it('forwards a POST with its body and content-type to the upstream', async () => {
+  let received = { method: '', type: '', body: '' }
+  const upstream = createServer((req, res) => void (async () => {
+    const chunks: Buffer[] = []; for await (const chunk of req) chunks.push(Buffer.from(chunk))
+    received = { method: req.method ?? '', type: String(req.headers['content-type']), body: Buffer.concat(chunks).toString('utf8') }
+    res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"ok":true}')
+  })())
+  await new Promise<void>(r => upstream.listen(0, '127.0.0.1', r))
+  const server = await ConsoleServer.start({ port: 0, upstream: `http://127.0.0.1:${(upstream.address() as { port: number }).port}`,
+    staticDir: await mkdtempLite() })
+  const reply = await fetch(`${server.url}/orchestrator/api/console/threads`, { method: 'POST',
+    headers: { 'content-type': 'application/json' }, body: '{"text":"写一篇小红书帖子"}' })
+  expect(reply.status).toBe(200)
+  expect(await reply.json()).toEqual({ ok: true })
+  expect(received.method).toBe('POST')
+  expect(received.type).toBe('application/json')
+  expect(received.body).toBe('{"text":"写一篇小红书帖子"}')
+  upstream.closeAllConnections()
+  await new Promise(r => upstream.close(r))
+  await server.close()
+})
