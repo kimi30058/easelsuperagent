@@ -4,8 +4,6 @@
 - insert:
     - id: easel-superagent
       name: easel-superagent
-    - id: easel-superagent-github
-      name: easel-superagent/github-watch
     # Optional Feishu Source; requires configuring a bot CLI after enabling.
     - id: easel-superagent-feishu
       name: easel-superagent/feishu-watch
