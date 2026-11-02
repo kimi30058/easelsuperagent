@@ -1566,3 +1566,9 @@ it('keeps the Policy the main Session judges by in its prompt, after admission a
   expect(policy()).toContain('No rule is enabled: a proactive candidate can only be ignored.')
   expect(policy()).toContain('The accept mode and the rules decide proactive candidates only')
 })
+
+it('registers the console Source kind', async () => {
+  const next = await restart()
+  await next.ready
+  expect(next.sources.instances().map(instance => instance.kind)).toContain('console')
+})
