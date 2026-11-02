@@ -7,10 +7,10 @@ description: Easel 技能库导航索引——按发现/策划/创作/发布/归
 
 按内容工作流五层使用（技能经 skill 工具按名加载，脚本用 bash 在工作根目录执行）：
 
-- **发现 discover**：skill-trending-topics、skill-rss-aggregator、skill-competitor-analysis、skill-hotlist-monitor
+- **发现 discover**：skill-trending-topics、skill-rss-aggregator、skill-competitor-analysis
 - **策划 plan**：skill-content-calendar、skill-topic-evaluator、skill-hook-generator、skill-profile-builder、skill-brand-onboarding
-- **创作 produce**：copywriting、card-xiaohongshu、poster-hero、infographic、record-card、tts-voiceover、multi-voice-dubbing、video-editing、short-drama、novel-writer、paper-explainer、ai-video-gen、ai-music、voice-clone、auto-subtitle
+- **创作 produce**：copywriting、card-xiaohongshu、poster-hero、infographic、skill-record-card、tts-voiceover、multi-voice-dubbing、video-editing、short-drama、novel-writer、paper-explainer、ai-video-gen、ai-music、voice-clone、auto-subtitle
 - **发布 publish**：skill-xhs-publisher、skill-douyin-upload、skill-kuaishou-upload、skill-zhihu-publisher、skill-bilibili-upload、skill-channels-upload、skill-wechat-publisher、skill-cross-platform-publish、skill-quality-gate、skill-risk-scanner、skill-publish-checklist
 - **归因 attribute**：skill-my-account、skill-publish-analytics、skill-comment-insights、skill-xhs-analyzer、skill-content-postmortem、skill-social-performance-review
 
-完整清单以技能目录消息为准。日历读写统一走 `python skills/shared/scripts/calendar_ops.py`（CWD=工作根）。
+完整清单以技能目录消息为准。日历读写统一在工单工作根内运行 `EASEL_ROOT="$(dirname "$EASEL_SUPERAGENT_DIR")" python3 skills/shared/scripts/calendar_ops.py <子命令>`：EASEL_ROOT 让记录落在共享执行根的 outputs/_schedule.json，而不是穿过 skills 软链进仓库。

@@ -1,7 +1,7 @@
 /** The Easel workspace-preparation script: each ticket directory is shaped as an Easel-style project root. */
 import { it, expect } from 'vitest'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readlinkSync, realpathSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -44,4 +44,19 @@ it('warns but succeeds when the shared .env is absent', () => {
   expect(result.status).toBe(0)
   expect(result.stderr).toMatch(/no shared \.env/)
   expect(existsSync(join(root, 't-3', 'skills'))).toBe(true)
+})
+
+it('runs the calendar command the worker prompt teaches, and the record lands in the shared execution root', () => {
+  const root = mkdtempSync(join(tmpdir(), 'easel-root-'))
+  expect(run(root, 't-4').status).toBe(0)
+  // The publish-gate rule 5 teaches a concrete calendar_ops command; take it verbatim from the prompt, as the worker reads it.
+  const workerPrompt = readFileSync(join(repo, 'prompts', 'worker.md'), 'utf8')
+  const command = /`([^`]*calendar_ops\.py[^`]*record-publish[^`]*)`/.exec(workerPrompt)?.[1]
+  expect(command, 'the worker prompt teaches a runnable calendar_ops record-publish command').toBeTruthy()
+  const done = spawnSync('sh', ['-c', command!], { cwd: join(root, 't-4'), encoding: 'utf8',
+    env: { ...process.env, EASEL_SUPERAGENT_DIR: join(root, 't-4'), EASEL_SUPERAGENT_NAME: 't-4', EASEL_SUPERAGENT_TICKET: 't-1' } })
+  expect(done.status, done.stderr).toBe(0)
+  // EASEL_ROOT must point the calendar at the shared execution root; a bare command would pierce the skills symlink into this repo.
+  expect(existsSync(join(root, 'outputs', '_schedule.json'))).toBe(true)
+  expect(existsSync(join(repo, 'skills', 'easel', 'outputs', '_schedule.json'))).toBe(false)
 })

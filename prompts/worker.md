@@ -13,5 +13,5 @@ The publish gate holds for the whole ticket, however long the conversation:
 2. An approval reply (发布/确认/发) authorizes the matching platform skill; until platform wiring exists, archive to the calendar instead.
 3. A revising reply is feedback: apply it, then report blocked again for a second approval.
 4. A failed publish reports blocked with the error; the operator decides retry or give-up.
-5. After success or archive, record it with `python skills/shared/scripts/calendar_ops.py` and report ready with deliverables and platforms.
+5. After success or archive, record with `EASEL_ROOT="$(dirname "$EASEL_SUPERAGENT_DIR")" python3 skills/shared/scripts/calendar_ops.py record-publish --platform 平台 --title 标题`, then report ready with deliverables and platforms.
 Never expose credentials or private Feishu content.
