@@ -191,6 +191,23 @@ export class Runtime extends Service implements SourceHost {
   pump(): Promise<void> { return this.passes.pump() }
   sendReplies(): Promise<void> { return this.outbox.sent() }
   private closing(): boolean { return this.closingFlag }
+  /**
+   * Persist the console Source's baked policy part once, so a fresh store admits the operator without anyone saving a
+   * console policy form in the panel. Idempotent: a stored part is never rewritten, so its policy revision stays.
+   */
+  private async bootstrapConsolePolicy(): Promise<void> {
+    const settings = this.store.settings()
+    if (settings.policy.sources.console !== undefined) return
+    try {
+      // The Policy schema fills a missing `allowed` with `[]` before the kind sees its part, so bake the kind's default here.
+      const part = this.sources.validatePolicy({ console: {} }).console
+      await this.settings.save('policy', { ...settings.policy, sources: { ...settings.policy.sources, console: part } },
+        this.store.blockRevision('policy'), 'tool')
+      this.ctx.logger.info('easel-superagent: bootstrapped the console Source policy part')
+    } catch (error) {
+      this.ctx.logger.warn('easel-superagent could not bootstrap the console Source policy part: %s', String(error))
+    }
+  }
   /** Hold evaluation, dispatch, and outbound delivery while paused or awaiting setup; sources still record incoming triggers. */
   private paused(): boolean { return !this.setup.configured() || this.store.settings().paused }
   private async initialize(): Promise<void> {
@@ -203,6 +220,7 @@ export class Runtime extends Service implements SourceHost {
     this.sessions.install()
     this.executor.install()
     await this.sessions.ensure(this.masterId, this.machine.stateDir, 'easel-superagent orchestrator', 'orchestrator')
+    await this.bootstrapConsolePolicy()
     for (const id of this.settings.syncable()) await this.settings.sync(id).catch(() => { /* sync() records its failure in health. */ })
     // If stop() was called while awaiting setup, session creation, or policy sync, do not start background loops.
     if (this.closing()) return

@@ -19,6 +19,7 @@ import { TextCache } from '../src/app/cache.ts'
 import { KV } from '../src/kv.ts'
 import { SettingsSchema, policyVersion, type SettingsOrigin } from '../src/policy.ts'
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { OPERATOR } from '../src/sources/console.ts'
 import { feishuKind } from '../src/sources/feishu.ts'
 import { CliError, Commands } from '../src/infra/commands.ts'
 import { workerGitConfig } from '../src/infra/environment.ts'
@@ -1567,8 +1568,21 @@ it('keeps the Policy the main Session judges by in its prompt, after admission a
   expect(policy()).toContain('The accept mode and the rules decide proactive candidates only')
 })
 
-it('registers the console Source kind', async () => {
+it('registers the console Source kind and persists its baked policy part at startup', async () => {
   const next = await restart()
   await next.ready
   expect(next.sources.instances().map(instance => instance.kind)).toContain('console')
+  expect(next.store.settings().policy.sources.console).toEqual({ allowed: [{ id: OPERATOR }], admission: {} })
+})
+
+it('bootstraps the console policy part once: a later startup rewrites nothing and keeps the policy revision', async () => {
+  const first = await restart()
+  await first.ready
+  // The first startup saved the missing part as a policy revision; without the bootstrap this stays 0.
+  const revision = first.store.blockRevision('policy')
+  expect(revision).toBeGreaterThan(0)
+  const second = await restart()
+  await second.ready
+  expect(second.store.settings().policy.sources.console).toEqual({ allowed: [{ id: OPERATOR }], admission: {} })
+  expect(second.store.blockRevision('policy')).toBe(revision)
 })
