@@ -7,7 +7,9 @@ import type { HttpHost } from '../src/app/http.ts'
 import { Store } from '../src/app/store.ts'
 import { HealthBoard } from '../src/infra/health.ts'
 import { SettingsSchema, settingsPolicy } from '../src/policy.ts'
+import { calendarView, deliverablesView, personasView, skillsView } from '../src/app/views/console.ts'
 import { mkdtempSync } from 'node:fs'
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -104,5 +106,95 @@ it('rejects an empty body, a foreign thread key and an unknown ticket', async ()
   expect(await call('POST', `console/threads/${encodeURIComponent('feishu:oc_1')}/messages`, { text: '写一篇小红书帖子', id: 'm2' }))
     .toMatchObject({ status: 400, body: { error: 'Not a console thread' } })
   expect(await call('POST', 'tickets/t404/message', { text: '发布', id: 'g2' })).toMatchObject({ status: 404 })
+  h.store.close()
+})
+
+it('reads the calendar and personas from an execution root, and 404s when absent', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'console-'))
+  await mkdir(join(root, 'outputs'), { recursive: true })
+  await writeFile(join(root, 'outputs', '_schedule.json'), JSON.stringify({ entries: [{ date: '2026-11-03', topic: '选题一' }] }))
+  await mkdir(join(root, 'profiles', '小红书主号'), { recursive: true })
+  expect(calendarView(root)).toEqual({ entries: [{ date: '2026-11-03', topic: '选题一' }] })
+  expect(personasView(root)).toEqual({ items: [{ name: '小红书主号' }] })
+  expect(calendarView(join(root, 'nowhere'))).toBeUndefined()
+  expect(personasView(join(root, 'nowhere'))).toEqual({ items: [] })
+})
+
+it('lists the builtin skills from their SKILL.md frontmatter, skipping directories it cannot read', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'console-skills-'))
+  const skill = async (name: string, header: string) => {
+    await mkdir(join(root, 'builtin', name), { recursive: true })
+    await writeFile(join(root, 'builtin', name, 'SKILL.md'), header)
+  }
+  // 内置技能库的真实头形式：description 可为带引号的单行，也可为 YAML 折叠块，且 description 与 --- 之间还有 layer 行
+  await skill('copywriting', '---\nname: copywriting\ndescription: "营销文案写作"\nlayer: produce\n---\n\n# 营销文案写作\n')
+  await skill('asset-manager', '---\nname: asset-manager\ndescription: >\n  产物管理：按日期归档。\n  当用户说"整理素材"时使用。\nlayer: general\n---\n\n# 素材管理器\n')
+  await mkdir(join(root, 'builtin', 'no-skill-md'), { recursive: true })
+  await writeFile(join(root, 'builtin', 'README.md'), 'not a skill directory')
+  expect(skillsView(root)).toEqual({ items: [
+    { name: 'asset-manager', description: '产物管理：按日期归档。 当用户说"整理素材"时使用。' },
+    { name: 'copywriting', description: '营销文案写作' },
+  ] })
+  expect(skillsView(join(root, 'nowhere'))).toEqual({ items: [] })
+})
+
+it('merges the deliverables of a ticket\'s assignments and checks each against its workspace', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'console-deliverables-'))
+  await mkdir(join(workspace, 'outputs'), { recursive: true })
+  await writeFile(join(workspace, 'outputs', 'draft.md'), '正文')
+  const ticket = { assignments: [
+    { report: { state: 'ready' as const, summary: '', at: '', deliverables: ['outputs/draft.md', 'outputs/missing.md'],
+      platforms: ['xhs', 'douyin'] } },
+    { report: { state: 'ready' as const, summary: '', at: '', deliverables: ['outputs/draft.md'], platforms: ['wechat'] } },
+    { report: { state: 'progress' as const, summary: '', at: '' } },
+  ] }
+  expect(deliverablesView(ticket, workspace)).toEqual({ items: [
+    { path: 'outputs/draft.md', exists: true, platforms: ['xhs', 'douyin', 'wechat'] },
+    { path: 'outputs/missing.md', exists: false, platforms: ['xhs', 'douyin'] },
+  ] })
+  // 工单还没有执行目录时，交付物一律无法确认存在
+  expect(deliverablesView(ticket, undefined).items[0]).toEqual({ path: 'outputs/draft.md', exists: false,
+    platforms: ['xhs', 'douyin', 'wechat'] })
+  expect(deliverablesView({ assignments: [] }, workspace)).toEqual({ items: [] })
+})
+
+it('serves the console calendar, personas and skills views over the execution root', async () => {
+  const stateDir = await mkdtemp(join(tmpdir(), 'console-state-'))
+  const root = join(stateDir, 'work') // 设置为空 executor.directory 时，执行根是 <stateDir>/work
+  await mkdir(join(root, 'outputs'), { recursive: true })
+  await writeFile(join(root, 'outputs', '_schedule.json'), JSON.stringify({ entries: [{ date: '2026-11-03', topic: '选题一' }] }))
+  await mkdir(join(root, 'profiles', '小红书主号'), { recursive: true })
+  const call = serve({ store: { settings: () => SettingsSchema.parse({}) }, machine: { stateDir } })
+  expect(await call('GET', 'calendar')).toMatchObject({ status: 200, body: { entries: [{ date: '2026-11-03', topic: '选题一' }] } })
+  expect(await call('GET', 'personas')).toMatchObject({ status: 200, body: { items: [{ name: '小红书主号' }] } })
+  const skills = await call('GET', 'skills')
+  expect(skills.status).toBe(200)
+  expect(skills.body.items).toContainEqual({ name: 'copywriting', description: expect.any(String) })
+  for (const item of skills.body.items as { name: string; description: string }[]) {
+    expect(typeof item.name).toBe('string') // 真实技能库整体可读，而不是被成批跳过
+    expect(item.description.length).toBeGreaterThan(0)
+  }
+  // 没有日历记录时是 404，画像目录缺失则是空列表
+  const bare = serve({ store: { settings: () => SettingsSchema.parse({}) }, machine: { stateDir: await mkdtemp(join(tmpdir(), 'console-bare-')) } })
+  expect(await bare('GET', 'calendar')).toEqual({ status: 404, body: { error: 'No calendar recorded yet' } })
+  expect(await bare('GET', 'personas')).toEqual({ status: 200, body: { items: [] } })
+})
+
+it('serves a ticket\'s deliverables, and 404s for an unknown ticket', async () => {
+  const h = host()
+  const workspace = await mkdtemp(join(tmpdir(), 'console-ticket-'))
+  await mkdir(join(workspace, 'outputs'), { recursive: true })
+  await writeFile(join(workspace, 'outputs', 'draft.md'), '正文')
+  const call = serve({ store: h.store, engine: h.engine, requestPass: () => {} })
+  const ticketId = await ticketFromRequest(h, call, '写一篇小红书帖子')
+  const reported = h.engine.report(ticketId, { state: 'ready', summary: '写完了', deliverables: ['outputs/draft.md', 'outputs/missing.md'],
+    platforms: ['xhs'] })
+  // 执行器负责填 execution.directory；本测试的桩执行器没填，手工指向工作区
+  h.store.tickets.save({ ...reported, execution: { name: ticketId, directory: workspace, assignment: '' } })
+  expect(await call('GET', `tickets/${ticketId}/deliverables`)).toMatchObject({ status: 200, body: { items: [
+    { path: 'outputs/draft.md', exists: true, platforms: ['xhs'] },
+    { path: 'outputs/missing.md', exists: false, platforms: ['xhs'] },
+  ] } })
+  expect(await call('GET', 'tickets/t404/deliverables')).toEqual({ status: 404, body: { error: 'Ticket not found' } })
   h.store.close()
 })

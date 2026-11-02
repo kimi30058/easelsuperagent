@@ -22,8 +22,10 @@ import type { Sessions } from './sessions.ts'
 import type { Store } from './store.ts'
 import type { TextCache } from './cache.ts'
 import type { LinkTarget, ViewHost } from './views/records.ts'
-import type { Variable } from './execution-environment.ts'
+import { executionRoot, type Variable } from './execution-environment.ts'
 import { policyHistory } from './settings-history.ts'
+import { packagePath } from '../infra/paths.ts'
+import { calendarView, deliverablesView, personasView, skillsView } from './views/console.ts'
 import { overview } from './views/overview.ts'
 import { settingsView } from './views/settings.ts'
 import { sourcesStatus, type SetupState } from './views/sources.ts'
@@ -243,6 +245,18 @@ function routes(runtime: HttpHost): Routes {
       return savePrompts(runtime, request.config, request.baseRevision, 'panel')
     },
     'POST prompts/preview': async input => runtime.prompts.preview(await promptBody(input)),
+    'GET calendar': () => {
+      const view = calendarView(executionRoot(store.settings(), runtime.machine.stateDir))
+      if (!view) throw new RouteError(404, 'No calendar recorded yet')
+      return view
+    },
+    'GET personas': () => personasView(executionRoot(store.settings(), runtime.machine.stateDir)),
+    'GET skills': () => skillsView(packagePath('skills', 'easel')),
+    'GET tickets/:id/deliverables': ({ params }) => {
+      const found = store.tickets.get(ticket(params.id))
+      if (!found) throw new RouteError(404, 'Ticket not found')
+      return deliverablesView(found, found.execution?.directory)
+    },
   }
 }
 function decoded(segment: string): string {

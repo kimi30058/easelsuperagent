@@ -399,6 +399,14 @@ const ROUTES: { [K in keyof Api]: Route<K> } = {
       skills: Object.fromEntries(skills),
       orchestrator: composePrompt(body, 'orchestrator'), worker: composePrompt(body, 'worker'), scope: '' }
   } },
+  // The console read endpoints: stand-in answers over fixture data, until the console panel tests take them up.
+  'GET calendar': { answer: () => ({ entries: [{ date: '2026-11-03', topic: '选题一' }] }) },
+  'GET personas': { answer: () => ({ items: [{ name: '小红书主号' }] }) },
+  'GET skills': { answer: () => ({ items: [{ name: 'copywriting', description: '营销文案写作' }] }) },
+  'GET tickets/:id/deliverables': { answer: ({ params }) => {
+    if (!ticketOf(params.id)) return refuse(404, 'Ticket not found')
+    return { items: [{ path: 'outputs/draft.md', exists: true, platforms: ['xhs'] }] }
+  } },
 }
 
 function match(method: string, segments: string[]) {
