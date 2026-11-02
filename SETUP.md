@@ -77,3 +77,13 @@ Send one message, under 300 words: what will be installed, the accounts and CLIs
 - How to try it: from an account on the allowed list, comment `@<agent login> <request>` on an issue in the repository. A Ticket appears on the overview within about a minute.
 - Three rules for the operator, from the Responsibility section of `docs/000-philosophy.md`: start narrow, tune for less noise, own what the agent says.
 - Where to read more: the numbered documents in `docs/`, in order.
+
+## Easel-specific steps (Phase 0)
+
+The orchestration setup above stands, with these differences:
+
+- There is no GitHub source and no agent GitHub CLI. Only the Feishu source is configured; its `allowed` list holds the operator.
+- The Execution settings' `prepare` command should be `<repo>/scripts/prepare-ticket.sh`: it shapes each ticket directory as an Easel workspace root (links `skills/`, creates `outputs/`, shares the execution root's `.env` and `profiles/`). The machine needs `python3` (3.10+) and `ffmpeg`; `pip install playwright` only for Phase 1 platform publishing.
+- Put a shared `.env` (model and media API keys, Easel format) and `profiles/` (account personas) in the execution root; both are linked into every ticket workspace and never enter git.
+- Set `eval.mode=auto` so the operator's requests are accepted without a second confirmation.
+- Walk the finished install through [docs/phase0-smoke.md](docs/phase0-smoke.md).
