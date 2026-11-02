@@ -131,9 +131,26 @@ it('enables the publish actions only while the ticket waits for a person', async
   await goto('#/execution/t1')
   expect((find(zh['console.confirmPublish']) as HTMLButtonElement).disabled).toBe(false)
   expect((find(zh['console.refusePublish']) as HTMLButtonElement).disabled).toBe(false)
-  await click(zh['console.confirmPublish'])
+  await click(zh['console.refusePublish'])
   expect(calls.filter(request => request.path === 'tickets/t1/message').at(-1)).toMatchObject({ method: 'POST',
-    body: { text: '发布', id: expect.stringMatching(UUID) } })
+    body: { text: '不发布', id: expect.stringMatching(UUID) } })
+})
+
+it('retries a failed confirmation as the same message, and mints a fresh id for the next round', async () => {
+  server.ticketDetails.t1 = { ...server.ticketDetails.t1!, stage: 'person' as const, action: 'blocked' as const }
+  sabotage = { path: 'tickets/t1/message', count: 1 }
+  await mountConsole()
+  await goto('#/execution/t1')
+  await click(zh['console.confirmPublish'])
+  await click(zh['console.confirmPublish']) // the first send failed; the retry must reach the server as the same message
+  const answers = calls.filter(request => request.path === 'tickets/t1/message')
+  expect(answers).toHaveLength(2)
+  expect(answers[1]!.body).toEqual(answers[0]!.body)
+  await click(zh['console.confirmPublish']) // a later round of the same gate answers as a new message
+  const later = calls.filter(request => request.path === 'tickets/t1/message').at(-1)!.body as { text: string; id: string }
+  expect(later.text).toBe('发布')
+  expect(later.id).toMatch(UUID)
+  expect(later.id).not.toBe((answers[1]!.body as { id: string }).id)
 })
 
 it('disables the publish actions with the current stage while the executor works', async () => {

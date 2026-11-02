@@ -1,5 +1,5 @@
 /** Console inbox: the unified thread list with a new-request compose, a console thread with a follow-up compose, and the publish-gate actions. */
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { usePoll, type ThreadRow, type TicketPageView } from '../client/api.ts'
 import { Button } from '../client/controls.tsx'
 import { threadMark, ticketMark } from '../client/marks.ts'
@@ -85,19 +85,29 @@ export function MessagesPage({ id }: { id?: string }): JSX.Element {
   return <ThreadList />
 }
 
+/** The gate's two answers, each carrying the message text its worker reads. */
+const ANSWERS = { confirm: '发布', refuse: '不发布' } as const
+
 /** The publish gate over a Ticket: while its worker waits on a person, the operator's answer goes in as one operator message; other stages show the stage. */
 export function GateActions({ ticket }: { ticket: TicketPageView }): JSX.Element {
   const { t, call } = usePanel()
   // The stage moves as the worker reports, so the gate reads the Ticket itself instead of reaching into the ticket page's data.
   const { data, reload } = usePoll(() => call('GET tickets/:id', { id: ticket.id }), [ticket.id])
   const current = data ?? ticket
-  const decide = useAction(async (text: string) => {
-    await call('POST tickets/:id/message', { id: current.id, body: { text, id: crypto.randomUUID() } })
+  // One held message id per answer while its send is pending: a retry of the same answer is the same message, which the server answers as a duplicate.
+  const held = useRef<{ confirm?: string; refuse?: string }>({})
+  const decide = useAction(async (answer: keyof typeof ANSWERS) => {
+    held.current[answer] ??= crypto.randomUUID()
+    await call('POST tickets/:id/message', { id: current.id, body: { text: ANSWERS[answer], id: held.current[answer] } })
+    held.current[answer] = undefined
   }, { reload })
-  const waiting = current.stage === 'person' && GATED.has(current.action ?? '')
+  const action = current.stage === 'person' ? current.action : undefined
+  const waiting = current.stage === 'person' && GATED.has(action ?? '')
+  // A held id belongs to one gate round: any stage change drops it, so a later round can never be answered as this round's duplicate.
+  useEffect(() => { held.current = {} }, [current.stage, action])
   return <div className="console-gate">
-    <Button variant="primary" disabled={!waiting || decide.busy} onClick={() => void decide.run('发布')}>{t('console.confirmPublish')}</Button>
-    <Button variant="outline" disabled={!waiting || decide.busy} onClick={() => void decide.run('不发布')}>{t('console.refusePublish')}</Button>
+    <Button variant="primary" disabled={!waiting || decide.busy} onClick={() => void decide.run('confirm')}>{t('console.confirmPublish')}</Button>
+    <Button variant="outline" disabled={!waiting || decide.busy} onClick={() => void decide.run('refuse')}>{t('console.refusePublish')}</Button>
     {!waiting && <span className="console-gate-stage">{ticketMark(t, current).label}</span>}
   </div>
 }
