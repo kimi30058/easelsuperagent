@@ -12,6 +12,8 @@ export const guides: Readonly<Record<string, string>> = Object.fromEntries(['sub
   .map(name => [name, promptFile(name)]))
 /** Bundled Source skills registered by easel-superagent; a team may override their text. */
 export const sourceSkills: Readonly<Record<'feishu', string>> = { feishu: bundledSkills.feishu.content }
+/** The bundled index over the mounted Easel skill library; a team may override its text. */
+export const easelIndexSkill = bundledSkills.easelIndex.content
 export const cliNotes = promptFile('cli')
 /** Default text for the team-editable prompt sections (communication, ticket scope, and PR delivery). */
 export const teamDefaults = {

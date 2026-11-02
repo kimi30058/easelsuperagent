@@ -74,6 +74,9 @@
               maxWaitTimeoutMs: 5000
           - id: skill-filesystem
             name: '@deepseek-ai/dsh-skill-filesystem'
+            config:
+              customSkillDirs:
+                - /Users/kimi/easel-superagent/skills/easel/builtin
           - id: tool-skill
             name: '@deepseek-ai/dsh-tool-skill'
           - id: compaction
@@ -172,6 +175,9 @@
               maxWaitTimeoutMs: 5000
           - id: skill-filesystem
             name: '@deepseek-ai/dsh-skill-filesystem'
+            config:
+              customSkillDirs:
+                - /Users/kimi/easel-superagent/skills/easel/builtin
           - id: tool-skill
             name: '@deepseek-ai/dsh-tool-skill'
           - id: compaction
