@@ -44,3 +44,10 @@ it('has words for every reason code the core records', () => {
 it('words the reasons agents read in the glossary\'s words: a sender on the list, a Thread', () => {
   expect(Object.values(REASONS).filter(text => /\b(member|members|topic)\b/i.test(text))).toEqual([])
 })
+
+it('words the delivery hint and the agent meaning by the content domain, not the removed PR workflow', () => {
+  // The panel shows these beside the team's editable sections and on the overview; they must describe publish gating and Feishu, not PRs.
+  for (const key of ['promptPartHint.delivery', 'meaning.agent'] as const) {
+    expect([key, zh[key], en[key]].every(part => !/\bPR\b|pull request|GitHub/i.test(part)), key).toBe(true)
+  }
+})

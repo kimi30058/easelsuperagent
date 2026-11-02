@@ -4,7 +4,7 @@
   "license": "MIT",
   "version": "0.1.0",
   "private": true,
-  "description": "A proactive agent for one GitHub repository, as a DSH (DeepSeek Harness) bundle: it listens to GitHub and optionally Feishu, evaluates requests under a Policy, turns authorized ones into Tickets, and executes each in its own DSH Session.",
+  "description": "A self-driving content agent for one operator, as a DSH (DeepSeek Harness) bundle: it listens to Feishu, evaluates requests under a Policy, turns authorized ones into Tickets, and produces content in its own DSH Session behind a human publish gate.",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
