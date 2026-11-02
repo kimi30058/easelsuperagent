@@ -1,0 +1,3 @@
+# Fork dsh-superagent 改造，而非 overlay 或从零自建
+
+easel-superagent 以 fork dsh-superagent-prototype 为骨架：保留 src/core 引擎（Eval/Policy/Ticket/Subscription，零改动）、Feishu Source、面板与测试基建；把 app 层 9 处 GitHub/PR 耦合（outbox 字数、links、cards、resources、executor 工具、assessor 仓库读取、内置技能、SETUP_FIELDS——docs/007 "Source-specific dependencies" 全清单）替换为自媒体语义。考虑过 A：不 fork 只做配置 overlay（最快，但面板与 orchestrator_report 全是 PR 术语，语义错位长期付利息，且 dsh-superagent 非 npm 库形态，引用别扭）；C：只拷 src/core 从零自建 app 层（保留最少，但重写 sessions/effects/outbox/api/面板，自弃最厚资产）。选 B 的根据：查证确认全部耦合点都在 app/deployment 层，架构规则本身强制 core 不 import Source——fork 改造是沿设计好的 seam 切割，core 的 depth 与测试 leverage 完整保留。
