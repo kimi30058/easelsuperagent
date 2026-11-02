@@ -38,4 +38,6 @@ Read the numbered documents in order; each builds only on the ones before it.
 
 ## License
 
-[MIT](LICENSE)
+The code of this repository is [MIT](LICENSE); it is a fork of [dsh-superagent-prototype](https://github.com/deepseek-ai/dsh-superagent-prototype) (MIT).
+
+The mounted Easel skill library in `skills/easel/` comes from [ZJU-REAL/Easel](https://github.com/ZJU-REAL/Easel) under **Apache-2.0**; see [skills/easel/NOTICE.md](skills/easel/NOTICE.md). Two embedded components keep their own licenses: `skills/easel/builtin/gzh-design/` is **AGPL-3.0** ([its LICENSE](skills/easel/builtin/gzh-design/LICENSE)), and `skills/easel/builtin/video-production/vendor/video-pipeline-sdk/` is MIT. The repository's MIT license does not limit those terms.
