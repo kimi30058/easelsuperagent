@@ -4,6 +4,7 @@
 `status`, `start`, and `restart` exit 0 while the service runs normally; 1 when it is stopped, duplicated, unreachable, or
 reporting a runtime error, which `restart` may fix; 2 when it runs while a component such as a Source reports an error;
 and 3 when it runs and waits for setup. A restart fixes neither 2 nor 3: they need a person.
+The console sidecar shares this lifecycle and counts as a component: an unreachable sidecar is a component error (exit 2).
 """
 
 import argparse
@@ -19,6 +20,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+from urllib.parse import urlsplit
 import urllib.request
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -78,6 +80,23 @@ def processes(profile):
     return found + [pid] if pid not in found and running(pid, profile) else found
 
 
+def console_running(pid):
+    """Return whether `pid` is currently running the console sidecar (`ps -p` returns nothing once exited)."""
+    return any(found == pid and name == 'node' and any('console-server.js' in word for word in args)
+               for found, name, args in ps('-p', str(pid)))
+
+
+def console_processes(profile):
+    """Return PIDs of all running console sidecars, including instances started outside this script and the recorded `console.pid` while still running."""
+    found = [pid for pid, name, args in ps('-ax', check=True)
+             if name == 'node' and any('console-server.js' in word for word in args)]
+    try:
+        pid = int((control(profile) / 'console.pid').read_text())
+    except (OSError, ValueError):
+        return found
+    return found + [pid] if pid not in found and console_running(pid) else found
+
+
 def state(url):
     """Fetch health and setup status from the management API, or return None if unreachable."""
     request = urllib.request.Request(url.rstrip('/') + '/orchestrator/api/state',
@@ -95,6 +114,16 @@ def state(url):
         return None
 
 
+def console_up(url):
+    """Return whether the console sidecar answers its health check at `url`."""
+    request = urllib.request.Request(url.rstrip('/') + '/healthz')
+    try:
+        with urllib.request.urlopen(request, timeout=2) as response:
+            return json.load(response).get('ok') is True
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
 PART_ERROR = 2
 SETUP_WAITS = 3
 
@@ -104,47 +133,58 @@ def runtime_up(current):
     return current is not None and current['health'].get('runtime') in ('ready', 'paused')
 
 
-def part_errors(current):
-    """Return non-runtime components that are in an error state."""
-    return {name: detail for name, detail in sorted(current['errors'].items()) if name != 'runtime'}
+def part_errors(current, console=True):
+    """Return non-runtime components that are in an error state; a console sidecar that does not answer counts as one."""
+    errors = {name: detail for name, detail in sorted(current['errors'].items()) if name != 'runtime'}
+    if not console:
+        errors['console'] = 'sidecar unreachable'
+    return errors
 
 
-def outcome(pids, current):
-    """Compute the CLI exit code from running PIDs and management API state."""
+def outcome(pids, current, console):
+    """Compute the CLI exit code from running PIDs, management API state, and console sidecar health."""
     if len(pids) != 1 or not runtime_up(current):
         return 1
     if current['setup']:
         return SETUP_WAITS
     # A component's lasting error, unlike a Feishu bot check that failed during setup, requires operator action.
-    return PART_ERROR if part_errors(current) else 0
+    return PART_ERROR if part_errors(current, console) else 0
 
 
 def status(args):
     pids = processes(args.profile)
     current = state(args.url) if pids else None
+    console = console_up(args.console_url)
+    errors = dict(current['errors']) if current else None
+    # The sidecar counts as a component error only while the runtime itself runs and waits for no setup.
+    if current and runtime_up(current) and not current['setup'] and not console:
+        errors['console'] = 'sidecar unreachable'
     print(json.dumps({'pids': pids, 'cwd': str(ROOT), 'url': args.url,
                       'manually_stopped': stopped(args.profile), 'health': current and current['health'],
-                      'errors': current and current['errors'], 'setup': current and current['setup'],
-                      'feishu': current and current['feishu']}, ensure_ascii=False, indent=2))
-    return outcome(pids, current)
+                      'errors': errors, 'setup': current and current['setup'],
+                      'feishu': current and current['feishu'],
+                      'console': {'up': console, 'url': args.console_url}}, ensure_ascii=False, indent=2))
+    return outcome(pids, current, console)
 
 
 def stop(args, intentional=True):
-    """Stop the service gracefully, recording a manual stop marker when `intentional` is True."""
+    """Stop the service and its console sidecar gracefully, recording a manual stop marker when `intentional` is True."""
     pids = processes(args.profile)
     if len(pids) > 1:
         raise RuntimeError('Multiple easel-superagent processes found; refusing to choose one.')
+    consoles = console_processes(args.profile)
     # Write the stop marker before waiting so monitors respect the intentional stop even if graceful shutdown times out.
     if intentional:
         (control(args.profile) / 'manually-stopped').write_text(time.strftime('%Y-%m-%dT%H:%M:%S%z') + '\n')
-    for pid in pids:
+    for pid in pids + consoles:
         os.kill(pid, signal.SIGINT)
     deadline = time.monotonic() + args.stop_timeout
-    while any(running(pid, args.profile) for pid in pids):
+    while any(running(pid, args.profile) for pid in pids) or any(console_running(pid) for pid in consoles):
         if time.monotonic() >= deadline:
             raise RuntimeError('Graceful stop timed out; no forced kill was sent. Check status.')
         time.sleep(0.5)
     (control(args.profile) / 'service.pid').unlink(missing_ok=True)
+    (control(args.profile) / 'console.pid').unlink(missing_ok=True)
     print('easel-superagent stopped. Automatic recovery is paused until start/restart.' if intentional else 'easel-superagent stopped.')
 
 
@@ -156,11 +196,33 @@ def prune_logs(profile):
         path.unlink(missing_ok=True)
 
 
+def start_console(args, session, log):
+    """Start the console sidecar in a second window of the service's tmux session, appending to the run's log."""
+    # The sidecar reads its port and upstream from the environment; an empty value would configure it wrongly, so only real ones are set.
+    parts = urlsplit(args.console_url)
+    env = [f'CONSOLE_PORT={parts.port}'] if parts.port else []
+    if args.url:
+        env.append('EASEL_SUPERAGENT_URL=' + args.url)
+    script = ['umask 077']
+    if env:
+        script.append('export ' + ' '.join(map(shlex.quote, env)))
+    script.append('exec ' + shlex.join(['node', str(ROOT / 'lib' / 'console-server.js')])
+                  + ' >> ' + shlex.quote(str(log)) + ' 2>&1')
+    pane = subprocess.run(['tmux', 'new-window', '-t', '=' + session + ':', '-d', '-P', '-F', '#{pane_pid}',
+                           '-n', 'console', '-c', str(ROOT), '; '.join(script)],
+                          check=True, capture_output=True, text=True).stdout.strip()
+    if pane.isdigit():
+        (control(args.profile) / 'console.pid').write_text(pane + '\n')
+
+
 def start(args):
     session = 'dsh-' + args.profile
     pids = processes(args.profile)
     if len(pids) > 1:
         raise RuntimeError('Multiple easel-superagent processes found; refusing to start another.')
+    # The run's log collects the service's output and, in a second window, the console sidecar's.
+    stamp = time.strftime('%Y%m%d-%H%M%S')
+    log = ARTIFACTS / f'easel-superagent-{args.profile}-{stamp}-{os.getpid()}.log'
     if not pids:
         dsh = shutil.which('dsh')
         if not dsh or not shutil.which('tmux'):
@@ -169,8 +231,6 @@ def start(args):
                                 capture_output=True).returncode == 0
         if state(args.url) is not None:
             raise RuntimeError('An existing orchestrator answers at this URL; refusing duplicate startup.')
-        stamp = time.strftime('%Y%m%d-%H%M%S')
-        log = ARTIFACTS / f'easel-superagent-{args.profile}-{stamp}-{os.getpid()}.log'
         log.touch()
         prune_logs(args.profile)
         # `exec` replaces the shell so the pane PID printed by tmux is the DSH service process itself.
@@ -187,10 +247,18 @@ def start(args):
         (control(args.profile) / 'service.pid').write_text(f'{pids[0]}\n')
         print(f'easel-superagent already running (PID {pids[0]}); no duplicate started.', flush=True)
     (control(args.profile) / 'manually-stopped').unlink(missing_ok=True)
+    console_opened = False
     deadline = time.monotonic() + args.timeout
     while time.monotonic() < deadline:
         current = state(args.url)
         if processes(args.profile) and runtime_up(current):
+            # The sidecar joins a healthy service; start opens one console window, then waits for it like for the service.
+            if not console_up(args.console_url):
+                if not console_opened:
+                    start_console(args, session, log)
+                    console_opened = True
+                time.sleep(1)
+                continue
             code = status(args)
             if current['setup']:
                 print('easel-superagent is waiting for setup: ' + str(current['setup'].get('detail', '')))
@@ -213,6 +281,8 @@ def main():
                         help='DSH profile that loads easel-superagent; its tmux session is dsh-<profile>.')
     parser.add_argument('--url', default=os.environ.get('EASEL_SUPERAGENT_URL') or 'http://127.0.0.1:3082',
                         help='Health-check URL; override after changing the profile port.')
+    parser.add_argument('--console-url', default=os.environ.get('CONSOLE_URL') or 'http://127.0.0.1:3083',
+                        help='Health-check URL of the console sidecar; override after changing its port.')
     parser.add_argument('--timeout', type=float, default=60, help='Startup timeout in seconds.')
     parser.add_argument('--stop-timeout', type=float, default=300,
                         help='Graceful shutdown timeout in seconds; running Executor Sessions finish their step first.')

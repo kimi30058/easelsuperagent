@@ -36,8 +36,9 @@ while IFS= read -r line; do
   pid=\${line%% *}; kill -0 "$pid" 2>/dev/null || continue
   if [ -z "$want" ] || [ "$pid" = "$want" ]; then printf '%s\\n' "$line"; fi
 done < "$list"`)
-  // Log tmux invocations and simulate session creation by outputting the pane PID.
+  // Log tmux invocations and simulate session creation by outputting the pane PID; the console window makes the sidecar answer.
   program('tmux', `for a in "$@"; do printf '%s\\n' "$a"; done >> '${root}/tmux.log'; echo --- >> '${root}/tmux.log'\n`
+    + `for a in "$@"; do case "$a" in *console-server.js*) touch '${root}/console-launched';; esac; done\n`
     + `case "$1" in has-session) exit 1;; new-*) touch '${root}/launched'; cat '${root}/pane';; esac`)
   program('dsh', 'exit 0')
 })
@@ -49,14 +50,19 @@ afterEach(() => {
 })
 function run(...args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise(resolve => execFile('python3', [join(root, 'scripts', 'easel-superagent'), ...args],
-    { env: { ...process.env, PATH: `${join(root, 'bin')}:${process.env.PATH}`, EASEL_SUPERAGENT_PROFILE: '', EASEL_SUPERAGENT_URL: '' },
+    { env: { ...process.env, PATH: `${join(root, 'bin')}:${process.env.PATH}`, EASEL_SUPERAGENT_PROFILE: '', EASEL_SUPERAGENT_URL: '', CONSOLE_URL: '' },
       timeout: 20_000 },
     (error, stdout, stderr) => resolve({ code: typeof error?.code === 'number' ? error.code : 0, stdout, stderr })))
 }
 const READY = { health: { runtime: { state: 'ready', detail: '' } }, setup: { problem: null, feishuProblem: null } }
-/** Start a mock HTTP server that returns 503 until tmux launches the service (unless always is true). */
+/** Start a mock HTTP server that returns 503 until tmux launches the service (unless always is true); `/healthz` stands in for the console sidecar and answers once its window opened. */
 async function answering(state: unknown = READY, always = false): Promise<string> {
-  server = createServer((_request, response) => {
+  server = createServer((request, response) => {
+    if (request.url === '/healthz') {
+      if (!always && !existsSync(join(root, 'console-launched'))) { response.writeHead(503).end(); return }
+      response.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}')
+      return
+    }
     if (!always && !existsSync(join(root, 'launched'))) { response.writeHead(503).end(); return }
     response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(state))
   })
@@ -89,7 +95,7 @@ it('records the service PID at start, and still refuses a second instance the sc
   const pid = sleeper()
   writeFileSync(join(root, 'pane'), `${pid}\n`)
   started(service(pid))
-  const start = await run('start', '--url', url, '--timeout', '10')
+  const start = await run('start', '--url', url, '--console-url', url, '--timeout', '10')
   expect(start).toMatchObject({ code: 0, stdout: expect.stringContaining(`"pids": [\n    ${pid}\n  ]`) })
   expect(readFileSync(join(control('superagent'), 'service.pid'), 'utf8')).toBe(`${pid}\n`)
   const tmux = readFileSync(join(root, 'tmux.log'), 'utf8').split('---\n').find(call => call.startsWith('new-session'))!.split('\n')
@@ -122,7 +128,7 @@ it('keeps only the newest logs it wrote for the profile', async () => {
     utimesSync(log, 1_700_000_000 + index, 1_700_000_000 + index)
   }
   writeFileSync(join(root, '.artifacts', 'easel-superagent-20260901-000000-1.log'), '')
-  expect(await run('start', '--url', url, '--timeout', '10')).toMatchObject({ code: 0 })
+  expect(await run('start', '--url', url, '--console-url', url, '--timeout', '10')).toMatchObject({ code: 0 })
   const logs = readdirSync(join(root, '.artifacts'))
   const own = logs.filter(name => name.startsWith('easel-superagent-superagent-')).sort()
   expect(own).toHaveLength(20)
@@ -136,20 +142,23 @@ it('reports a service whose Feishu bot setup could not check as running, and rea
   processes(service(sleeper()))
   const feishu = { health: { runtime: { state: 'ready', detail: '' }, feishu: { state: 'paused', detail: '' } },
     setup: { problem: null, feishuProblem: { code: 'feishuNoBot', detail: 'No bot' } } }
-  expect(await run('status', '--url', await answering(feishu, true))).toMatchObject({ code: 0 })
+  let url = await answering(feishu, true)
+  expect(await run('status', '--url', url, '--console-url', url)).toMatchObject({ code: 0 })
   server!.close()
-  expect(await run('status', '--url', await answering({ health: { runtime: { state: 'ready' } } }, true))).toMatchObject({ code: 0 })
+  url = await answering({ health: { runtime: { state: 'ready' } } }, true)
+  expect(await run('status', '--url', url, '--console-url', url)).toMatchObject({ code: 0 })
   server!.close()
-  expect(await run('status', '--url', await answering({ health: { runtime: { state: 'error' } } }, true))).toMatchObject({ code: 1 })
+  url = await answering({ health: { runtime: { state: 'error' } } }, true)
+  expect(await run('status', '--url', url, '--console-url', url)).toMatchObject({ code: 1 })
 })
 it('exits 2 while a part such as a Source reports an error, which a restart does not fix, and prints what it reports', async () => {
   processes(service(sleeper()))
   const github = { health: { runtime: { state: 'ready', detail: '' }, github: { state: 'error', detail: 'bad token' } }, setup: {} }
   const url = await answering(github, true)
-  const checked = await run('status', '--url', url)
+  const checked = await run('status', '--url', url, '--console-url', url)
   expect(checked.code).toBe(2)
   expect(JSON.parse(checked.stdout)).toMatchObject({ errors: { github: 'bad token' } })
-  expect(await run('start', '--url', url, '--timeout', '10'))
+  expect(await run('start', '--url', url, '--console-url', url, '--timeout', '10'))
     .toMatchObject({ code: 2, stdout: expect.stringContaining('github reports an error, which a restart does not fix: bad token') })
 }, 20_000)
 it('exits 3 while the service waits for setup, from status and from start, which a restart does not fix', async () => {
@@ -157,8 +166,8 @@ it('exits 3 while the service waits for setup, from status and from start, which
   const waiting = { health: { runtime: { state: 'paused', detail: '' } },
     setup: { problem: { code: 'repositoryUnset', detail: 'The GitHub Source names no repository.' }, feishuProblem: null } }
   const url = await answering(waiting, true)
-  expect(await run('status', '--url', url)).toMatchObject({ code: 3 })
-  expect(await run('start', '--url', url, '--timeout', '10'))
+  expect(await run('status', '--url', url, '--console-url', url)).toMatchObject({ code: 3 })
+  expect(await run('start', '--url', url, '--console-url', url, '--timeout', '10'))
     .toMatchObject({ code: 3, stdout: expect.stringContaining('waiting for setup: The GitHub Source names no repository.') })
 }, 20_000)
 it('restarts the service, and a restart whose graceful stop timed out does not keep recovery off', async () => {
@@ -167,7 +176,7 @@ it('restarts the service, and a restart whose graceful stop timed out does not k
   processes(service(old))
   writeFileSync(join(root, 'pane'), `${pid}\n`)
   started(service(pid))
-  const restarted = await run('restart', '--url', url, '--timeout', '10', '--stop-timeout', '5')
+  const restarted = await run('restart', '--url', url, '--console-url', url, '--timeout', '10', '--stop-timeout', '5')
   expect(restarted).toMatchObject({ code: 0, stdout: expect.stringContaining('easel-superagent stopped.') })
   expect(restarted.stdout).not.toContain('Automatic recovery is paused')
   expect(existsSync(join(control('superagent'), 'manually-stopped'))).toBe(false)
@@ -175,7 +184,7 @@ it('restarts the service, and a restart whose graceful stop timed out does not k
   // A service that does not stop in time is left running, and the next check may restart it.
   rmSync(join(root, 'launched'))
   processes(service(sleeper(true)))
-  expect(await run('restart', '--url', url, '--timeout', '10', '--stop-timeout', '1'))
+  expect(await run('restart', '--url', url, '--console-url', url, '--timeout', '10', '--stop-timeout', '1'))
     .toMatchObject({ code: 1, stderr: expect.stringContaining('Graceful stop timed out') })
   expect(await status('superagent')).toMatchObject({ manually_stopped: false })
 }, 20_000)
@@ -201,12 +210,13 @@ it('refuses to start a service while no process runs it but something answers at
 }, 20_000)
 it('starts the service in a new window of the profile\'s tmux session when the session exists', async () => {
   program('tmux', `for a in "$@"; do printf '%s\\n' "$a"; done >> '${root}/tmux.log'; echo --- >> '${root}/tmux.log'\n`
+    + `for a in "$@"; do case "$a" in *console-server.js*) touch '${root}/console-launched';; esac; done\n`
     + `case "$1" in has-session) exit 0;; new-*) touch '${root}/launched'; cat '${root}/pane';; esac`)
   const url = await answering()
   const pid = sleeper()
   writeFileSync(join(root, 'pane'), `${pid}\n`)
   started(service(pid))
-  expect(await run('start', '--url', url, '--timeout', '10')).toMatchObject({ code: 0 })
+  expect(await run('start', '--url', url, '--console-url', url, '--timeout', '10')).toMatchObject({ code: 0 })
   const calls = readFileSync(join(root, 'tmux.log'), 'utf8').split('---\n').map(call => call.split('\n'))
   expect(calls.find(call => call[0] === 'new-window')).toEqual(expect.arrayContaining(['-t', '=dsh-superagent:']))
   expect(calls.some(call => call[0] === 'new-session')).toBe(false)
@@ -231,4 +241,41 @@ it('does not signal a process that took the recorded service PID, and keeps a st
   processes(service(sleeper(true)))
   expect(await run('stop', '--stop-timeout', '1')).toMatchObject({ code: 1, stderr: expect.stringContaining('Graceful stop timed out') })
   expect(existsSync(join(control('superagent'), 'manually-stopped'))).toBe(true)
+}, 20_000)
+it('counts a down sidecar as a component error while the main service is up', async () => {
+  processes(service(sleeper()))
+  const url = await answering(READY, true)
+  const checked = await run('status', '--url', url, '--console-url', 'http://127.0.0.1:9')
+  expect(checked.code).toBe(2)
+  expect(JSON.parse(checked.stdout)).toMatchObject({ errors: { console: 'sidecar unreachable' },
+    console: { up: false, url: 'http://127.0.0.1:9' } })
+})
+it('starts the console sidecar with the main service and reports it in status', async () => {
+  const url = await answering()
+  const pid = sleeper()
+  writeFileSync(join(root, 'pane'), `${pid}\n`)
+  started(service(pid))
+  const start = await run('start', '--url', url, '--console-url', url, '--timeout', '15')
+  expect(start).toMatchObject({ code: 0 })
+  expect(JSON.parse(start.stdout.slice(start.stdout.indexOf('{')))).toMatchObject({ console: { up: true, url } })
+  expect(readFileSync(join(control('superagent'), 'console.pid'), 'utf8')).toBe(`${pid}\n`)
+  const checkout = realpathSync(root)
+  const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)
+  const opened = readFileSync(join(root, 'tmux.log'), 'utf8').split('---\n')
+    .map(call => call.split('\n')).find(call => call.some(word => word.includes('console-server.js')))!
+  // A second window of the same session runs the sidecar with the console's port and the service's URL, sharing the run's log.
+  expect(opened).toEqual(expect.arrayContaining(['new-window', '-t', '=dsh-superagent:', '-n', 'console', '-c', checkout]))
+  expect(opened.find(word => word.startsWith('umask 077;'))).toMatch(new RegExp(
+    `^umask 077; export CONSOLE_PORT=\\d+ EASEL_SUPERAGENT_URL=${escape(url)}; `
+    + `exec node '${escape(checkout)}/lib/console-server.js' >> '${escape(checkout)}/\\.artifacts/`
+    + `easel-superagent-superagent-\\d{8}-\\d{6}-\\d+\\.log' 2>&1$`))
+}, 20_000)
+it('stops the console sidecar with the service and forgets its PID', async () => {
+  const pid = sleeper(), sidecar = sleeper()
+  processes(service(pid), `${sidecar} node node /opt/lib/console-server.js`)
+  mkdirSync(control('superagent'), { recursive: true })
+  writeFileSync(join(control('superagent'), 'console.pid'), `${sidecar}\n`)
+  expect(await run('stop', '--stop-timeout', '5')).toMatchObject({ code: 0, stdout: expect.stringContaining('easel-superagent stopped') })
+  expect(() => process.kill(sidecar, 0)).toThrow()
+  expect(existsSync(join(control('superagent'), 'console.pid'))).toBe(false)
 }, 20_000)
