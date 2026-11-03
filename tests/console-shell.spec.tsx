@@ -36,7 +36,7 @@ it('renders the console sidebar over the shared overview', async () => {
   expect(document.querySelector('.console-nav h1')?.textContent).toBe(zh['console.title'])
   expect(document.querySelector('.console-brand')?.textContent).toBe('easelsuperagent')
   expect(navLinks()).toEqual([['概览', '#/overview'], ['消息', '#/messages'], ['执行', '#/execution'], ['日历', '#/calendar'],
-    ['画像', '#/personas'], ['技能', '#/skills'], ['触发', '#/trigger'], ['评估', '#/eval'], ['设置', '#/settings']])
+    ['画像', '#/personas'], ['技能', '#/skills'], ['账号', '#/accounts'], ['触发', '#/trigger'], ['评估', '#/eval'], ['设置', '#/settings']])
   expect(all('.console-nav a').find(link => link.textContent === zh['tab.overview'])?.getAttribute('aria-current')).toBe('page')
   expect(document.querySelector('main[role="tabpanel"]')?.getAttribute('aria-label')).toBe(zh['tab.overview'])
   expect(text()).toContain(zh.pendingTickets)
@@ -83,5 +83,5 @@ it('speaks English when the browser asks for it', async () => {
   await mountConsole()
   expect(document.querySelector('.console-nav h1')?.textContent).toBe(en['console.title'])
   expect(navLinks().map(([label]) => label)).toEqual([en['tab.overview'], en['nav.messages'], en['tab.execution'],
-    en['nav.calendar'], en['nav.personas'], en['nav.skills'], en['tab.trigger'], en['tab.eval'], en['tab.settings']])
+    en['nav.calendar'], en['nav.personas'], en['nav.skills'], en['nav.accounts'], en['tab.trigger'], en['tab.eval'], en['tab.settings']])
 })

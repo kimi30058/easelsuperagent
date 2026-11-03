@@ -33,3 +33,25 @@ body { margin: 0; font-family: Manrope, 'Noto Sans SC', 'Avenir Next', system-ui
   .console-nav h1 { margin: 0 12px 0 0; }
   .console-subnav { display: none; }
 }
+
+/* Accounts page (SP2): platform cards, state badges, the login modal and its forms. */
+.console-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.console-card { display: flex; flex-direction: column; gap: 8px; padding: 14px; border: 0.5px solid var(--dsw-alias-border-l3); border-radius: 10px; background: var(--dsw-alias-bg-layer-2); }
+.console-card-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+.console-state { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; padding: 0 10px; border-radius: 999px; font-size: 12px; line-height: 18px; white-space: nowrap; }
+.console-state-ok { color: var(--dsw-alias-state-success-primary, #059669); background: var(--dsw-alias-state-success-muted, rgba(5, 150, 105, 0.12)); }
+.console-state-off { color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-interactive-bg-hover); }
+.console-card-note { font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-secondary); }
+.console-card-actions { display: flex; gap: 8px; margin-top: auto; }
+.console-card-actions button, .console-modal-card button { min-height: 44px; min-width: 44px; padding: 0 14px; border: 0; border-radius: 8px; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); font: inherit; cursor: pointer; }
+.console-card-actions button:hover, .console-modal-card button:hover { background: var(--dsw-alias-interactive-bg-active); }
+.console-modal { position: fixed; inset: 0; z-index: 1100; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.45); }
+.console-modal-card { display: flex; flex-direction: column; gap: 12px; width: min(360px, 90vw); padding: 20px; border-radius: 12px; background: var(--dsw-alias-bg-layer-2); }
+.console-modal-card h2 { margin: 0; font-size: 16px; color: var(--dsw-alias-label-primary); }
+.console-qr img { width: 240px; height: 240px; object-fit: contain; }
+.console-form { display: flex; flex-direction: column; gap: 8px; }
+.console-form label { font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-secondary); }
+.console-form input { min-height: 44px; padding: 8px 12px; border: 0.5px solid var(--dsw-alias-border-l4); border-radius: 8px; background: var(--dsw-alias-bg-layer-1, transparent); color: var(--dsw-alias-label-primary); font: inherit; }
+.console-form button[type='submit'] { background: var(--dsw-alias-state-success-primary, #059669); color: var(--dsw-alias-label-primary-foreground, #fff); }
+.console-danger { background: var(--dsw-alias-state-warn-primary, #d97706) !important; color: var(--dsw-alias-label-primary-foreground, #fff) !important; }
+@media (prefers-reduced-motion: reduce) { .console-modal, .console-modal * { transition: none; } }

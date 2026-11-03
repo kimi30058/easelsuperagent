@@ -13,6 +13,7 @@ import type { T } from '../client/text.ts'
 import { ThreadPage } from '../client/thread.tsx'
 import { TicketPage } from '../client/ticket.tsx'
 import { TriggerStatus } from '../client/trigger.tsx'
+import { AccountsPage } from './accounts.tsx'
 import { CalendarPage, PersonasPage, SkillsPage } from './content.tsx'
 import { GateActions, MessagesPage } from './inbox.tsx'
 
@@ -53,7 +54,7 @@ function useHashRoute(): { route: Route; navigate: PanelContext['navigate'] } {
   return { route, navigate }
 }
 
-const NAV = [['overview', 'tab.overview'], ['messages', 'nav.messages'], ['execution', 'tab.execution'], ['calendar', 'nav.calendar'], ['personas', 'nav.personas'], ['skills', 'nav.skills'], ['trigger', 'tab.trigger'], ['eval', 'tab.eval'], ['settings', 'tab.settings']] as const
+const NAV = [['overview', 'tab.overview'], ['messages', 'nav.messages'], ['execution', 'tab.execution'], ['calendar', 'nav.calendar'], ['personas', 'nav.personas'], ['skills', 'nav.skills'], ['accounts', 'nav.accounts'], ['trigger', 'tab.trigger'], ['eval', 'tab.eval'], ['settings', 'tab.settings']] as const
 
 /** The execution detail: the publish gate above the shared ticket page, each reading the Ticket its own way. */
 function TicketWithGate({ id }: { id: string }) {
@@ -82,6 +83,7 @@ function Page({ route }: { route: Route }) {
     case 'calendar': return <CalendarPage />
     case 'personas': return <PersonasPage />
     case 'skills': return <SkillsPage />
+    case 'accounts': return <AccountsPage />
   }
 }
 
