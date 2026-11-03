@@ -6,6 +6,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ConsoleServer } from '../src/console/server.ts'
 
+/** A real directory the settings view can name as the execution root. */
+async function mkdtempRoot(): Promise<string> {
+  return mkdtemp(join(tmpdir(), 'sp2-server-root-'))
+}
+
 /** Create a static directory holding a stub console bundle, as the Task 6 build will. */
 async function mkdtempLite(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'console-static-'))
@@ -139,4 +144,30 @@ it('answers a proxied body over one mebibyte with 413 and never forwards it', as
   upstream.closeAllConnections()
   await new Promise(r => upstream.close(r))
   await server.close()
+})
+
+it('answers /api/accounts through the mounted account domain, behind the Host check, and stops its runners on close', async () => {
+  const executionRoot = await mkdtempRoot()
+  const upstream = createServer((req, res) => {
+    if (req.url === '/orchestrator/api/settings') {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ environment: { root: executionRoot, variables: [] } }))
+      return
+    }
+    res.writeHead(404, { 'content-type': 'application/json' }); res.end('{}')
+  })
+  await new Promise<void>(r => upstream.listen(0, '127.0.0.1', r))
+  const server = await ConsoleServer.start({ port: 0,
+    upstream: `http://127.0.0.1:${(upstream.address() as { port: number }).port}`, staticDir: await mkdtempLite() })
+  try {
+    const cards = await (await fetch(`${server.url}/api/accounts`)).json() as { platform: string }[]
+    expect(cards.map(card => card.platform)).toEqual(['xiaohongshu', 'bilibili', 'douyin', 'wechat-oa'])
+    // Host 校验先于一切路由：坏 Host 的 /api 请求同样被拒
+    const refused = await ask(`${server.url}/api/accounts`, { host: 'evil.example:3083' })
+    expect(refused.status).toBe(403)
+  } finally {
+    await server.close()   // close 现在也回收账号 runner——不崩即通过
+    upstream.closeAllConnections()
+    await new Promise<void>(r => upstream.close(() => r()))
+  }
 })
