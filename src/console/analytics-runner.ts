@@ -131,9 +131,9 @@ export class AnalyticsRunners {
       const parsed = lastJsonObject(text)
       if (parsed !== undefined) {
         await writeLatest(this.deps.root, platform, parsed).catch(() => undefined)
-        // bili/mp 的脚本不写 jsonl（那是 account_stats 的行为），趋势快照由 sidecar 代记，sparkline 才有形。
-        if (platform === 'bilibili' || platform === 'wechat-oa')
-          await appendSnapshot(this.deps.root, platform, parsed, this.deps.now()).catch(() => undefined)
+        // 执行根的 jsonl 全权归 sidecar：account_stats 的 jsonl 落它自解析的错位根（ADR-0007，无 CLI 覆盖），
+        // bili/mp 根本不写——七平台的趋势快照统一由这里代记，sparkline 才有形。
+        await appendSnapshot(this.deps.root, platform, parsed, this.deps.now()).catch(() => undefined)
         ok = true
       }
     }

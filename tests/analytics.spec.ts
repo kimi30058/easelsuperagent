@@ -199,7 +199,7 @@ describe('AnalyticsRunners queue', () => {
     for (const flight of flights.slice()) await flight.exit(0)                         // 收尾：catchUp 起的航班也落停
   })
 
-  it('snapshots bili/mp fetches itself — account_stats platforms stay the script\'s to write', async () => {
+  it('snapshots every successful fetch — the execution root\'s jsonl is sidecar-owned', async () => {
     const before = Math.floor(Date.now() / 1000)
     const bili = manual('{"platform":"bilibili","followers":456,"likes":78,"posts":2}')
     const oa = manual('{"platform":"wechat-oa","followers":10,"likes":20,"posts":3}')
@@ -215,8 +215,9 @@ describe('AnalyticsRunners queue', () => {
     expect(JSON.parse(biliLine)).toMatchObject({ followers: 456, likes: 78, posts: 2, ts: before + 60 })
     const oaLine = (await readFile(jsonlPath(root, 'wechat-oa'), 'utf8').catch(() => '')).trim()
     expect(JSON.parse(oaLine)).toMatchObject({ followers: 10, ts: before + 60 })
-    await expect(readFile(jsonlPath(root, 'xiaohongshu'), 'utf8')).rejects.toThrow()   // account_stats 族：sidecar 不写
-  })
+    const xhsLine = (await readFile(jsonlPath(root, 'xiaohongshu'), 'utf8').catch(() => '')).trim()
+    expect(JSON.parse(xhsLine)).toMatchObject({ followers: 1, ts: before + 60 })      // account_stats 的 jsonl 落脚本自解析的
+  })                                                                                  // 错位根（ADR-0007，无 CLI 覆盖）——执行根的快照归 sidecar
 })
 
 describe('AnalyticsApi routes', () => {
