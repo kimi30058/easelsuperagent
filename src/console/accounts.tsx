@@ -1,5 +1,6 @@
 /** The accounts page: one card per platform with live state and whoami names, plus the login modal and its forms. */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Button } from '../client/controls.tsx'
 import { usePanel } from '../client/provider.tsx'
 import type { T } from '../client/text.ts'
 
@@ -97,8 +98,8 @@ export function AccountsPage(): JSX.Element {
       <div className="console-modal-card">
         <p>{t('console.logoutConfirm')}</p>
         <div className="console-card-actions">
-          <button type="button" onClick={() => setConfirmLogout(undefined)}>{t('cancel')}</button>
-          <button type="button" className="console-danger" onClick={() => { void logout(confirmLogout) }}>{t('confirm')}</button>
+          <Button variant="ghost" onClick={() => setConfirmLogout(undefined)}>{t('cancel')}</Button>
+          <Button variant="ghost" className="console-danger" onClick={() => { void logout(confirmLogout) }}>{t('confirm')}</Button>
         </div>
       </div>
     </div>}
@@ -120,11 +121,11 @@ function AccountCardView({ card, whoami, onLogin, onVerify, onLogout }: {
     <div className="console-card-note">{whoami?.name || card.note}</div>
     {card.backend === 'wechat-oa' && <CredentialsRow />}
     <div className="console-card-actions">
-      {!loggedIn && <button type="button" onClick={onLogin}>
+      {!loggedIn && <Button variant="outline" onClick={onLogin}>
         {card.backend === 'wechat-oa' ? t('console.mpLogin') : t('console.login')}
-      </button>}
-      {loggedIn && <button type="button" onClick={onVerify}>{t('console.verify')}</button>}
-      {loggedIn && <button type="button" onClick={onLogout}>{t('console.logout')}</button>}
+      </Button>}
+      {loggedIn && <Button variant="ghost" onClick={onVerify}>{t('console.verify')}</Button>}
+      {loggedIn && <Button variant="ghost" onClick={onLogout}>{t('console.logout')}</Button>}
     </div>
   </div>
 }
@@ -153,7 +154,7 @@ function CredentialsRow(): JSX.Element {
   return <>
     <div className="console-card-note">{t('console.credentials')}
       {view?.configured && view.appIdMasked !== '' ? `：${view.appIdMasked}` : ''}</div>
-    <button type="button" onClick={() => { setOpen(previous => !previous) }}>{t('console.credentials')}</button>
+    <Button variant="ghost" onClick={() => { setOpen(previous => !previous) }}>{t('console.credentials')}</Button>
     {open && <form className="console-form" onSubmit={event => { event.preventDefault(); save() }}>
       <label htmlFor="credential-appid">{t('console.appId')}</label>
       <input id="credential-appid" value={fields.appId}
@@ -162,7 +163,7 @@ function CredentialsRow(): JSX.Element {
       <input id="credential-secret" type="password" value={fields.appSecret}
         onChange={event => setFields(previous => ({ ...previous, appSecret: event.target.value }))} />
       {message !== '' && <p className="console-card-note" role="status">{message}</p>}
-      <button type="button" disabled={busy} onClick={save}>{t('console.saveCredentials')}</button>
+      <Button variant="outline" disabled={busy} onClick={save}>{t('console.saveCredentials')}</Button>
     </form>}
   </>
 }
@@ -231,11 +232,11 @@ function LoginModal({ platform, name, onClose }: { platform: string; name: strin
           onChange={event => setSms(event.target.value)}
           onBlur={() => { if (sms !== '' && !/^\d{4,8}$/.test(sms.trim())) setSmsError(t('console.smsInvalid')) }} />
         {smsError !== '' && <p className="dt-error" role="alert">{smsError}</p>}
-        <button type="submit" disabled={busy}>{t('console.smsSubmit')}</button>
+        <Button variant="primary" type="submit" disabled={busy}>{t('console.smsSubmit')}</Button>
       </form>}
-      {status.state === 'expired' && <button type="button" onClick={restart}>{t('console.relogin')}</button>}
+      {status.state === 'expired' && <Button variant="outline" onClick={restart}>{t('console.relogin')}</Button>}
       <p className="console-card-note">{t('console.cancelLoginHint')}</p>
-      <button type="button" onClick={close}>{t('close')}</button>
+      <Button variant="ghost" onClick={close}>{t('close')}</Button>
     </div>
   </div>
 }

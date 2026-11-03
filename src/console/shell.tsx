@@ -1,5 +1,5 @@
 /** Console shell: hash-routed sidebar over the shared panel views, with its own words, offline bar, and Session links. */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { usePoll } from '../client/api.ts'
 import { EvalStatus } from '../client/eval.tsx'
 import { ExecutionStatus } from '../client/execution.tsx'
@@ -54,7 +54,13 @@ function useHashRoute(): { route: Route; navigate: PanelContext['navigate'] } {
   return { route, navigate }
 }
 
-const NAV = [['overview', 'tab.overview'], ['messages', 'nav.messages'], ['execution', 'tab.execution'], ['calendar', 'nav.calendar'], ['personas', 'nav.personas'], ['skills', 'nav.skills'], ['accounts', 'nav.accounts'], ['trigger', 'tab.trigger'], ['eval', 'tab.eval'], ['settings', 'tab.settings']] as const
+/** The sidebar's pages in labeled groups; every entry is `[page, label key]` and the flat order is the sidebar's order. */
+const NAV_GROUPS: { label: EaselSuperagentKey; items: readonly (readonly [Route['page'], EaselSuperagentKey])[] }[] = [
+  { label: 'console.group.ops', items: [['overview', 'tab.overview'], ['messages', 'nav.messages'], ['execution', 'tab.execution']] },
+  { label: 'console.group.workspace', items: [['calendar', 'nav.calendar'], ['personas', 'nav.personas'], ['skills', 'nav.skills'], ['accounts', 'nav.accounts']] },
+  { label: 'console.group.system', items: [['trigger', 'tab.trigger'], ['eval', 'tab.eval'], ['settings', 'tab.settings']] },
+]
+const NAV: readonly (readonly [Route['page'], EaselSuperagentKey])[] = NAV_GROUPS.flatMap(group => group.items)
 
 /** The execution detail: the publish gate above the shared ticket page, each reading the Ticket its own way. */
 function TicketWithGate({ id }: { id: string }) {
@@ -87,20 +93,23 @@ function Page({ route }: { route: Route }) {
   }
 }
 
-/** The console chrome: the brand and page navigation beside the active view, with the offline bar above it. */
+/** The console chrome: the offline bar as the frame's first row, then the brand and grouped page navigation beside the active view. */
 function ConsoleShell({ route }: { route: Route }) {
   const { t } = usePanel()
   const { error } = usePanelData()
   const current = NAV.find(([page]) => page === route.page)
   return <div className="console-shell">
+    {error && <p className="console-offline" role="status">{t('console.offlineBar')}</p>}
     <nav className="console-nav" aria-label={t('console.navLabel')}>
       <div className="console-brand">easel<span>superagent</span></div>
       <h1>{t('console.title')}</h1>
-      {NAV.map(([page, key]) => <a key={page} href={`#/${page}`}
-        aria-current={route.page === page ? 'page' : undefined}>{t(key)}</a>)}
+      {NAV_GROUPS.map(group => <Fragment key={group.label}>
+        <h2 className="console-nav-group">{t(group.label)}</h2>
+        {group.items.map(([page, key]) => <a key={page} href={`#/${page}`}
+          aria-current={route.page === page ? 'page' : undefined}>{t(key)}</a>)}
+      </Fragment>)}
     </nav>
     <div className="console-main">
-      {error && <p className="console-offline" role="status">{t('console.offlineBar')}</p>}
       <main role="tabpanel" aria-label={current ? t(current[1]) : undefined}><Page route={route} /></main>
     </div>
   </div>

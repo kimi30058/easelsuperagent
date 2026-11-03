@@ -158,6 +158,9 @@ const TEXT = {
   'console.emptyCalendar': ['还没有排期记录', 'No calendar records yet'],
   'console.back': ['返回', 'Back'],
   'console.navLabel': ['主导航', 'Main navigation'],
+  'console.group.ops': ['运营', 'Operations'],
+  'console.group.workspace': ['工作区', 'Workspace'],
+  'console.group.system': ['系统', 'System'],
   // Overview
   sourceError: ['{source} 来源异常', '{source} Source failing'],
   needsYouNone: ['没有待处理的工单。', 'No pending Tickets.'],

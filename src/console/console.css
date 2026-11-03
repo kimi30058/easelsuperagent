@@ -1,57 +1,65 @@
-/* Console skin: DSH alias tokens remapped to the Easel palette (teal→indigo, paper light, full dark). One rule per line. */
+/* Console skin: DSH alias tokens remapped to the Easel palette (teal→indigo, paper light, full dark); type and control geometry come from the shared `--dt-*` tokens in client.css. One rule per line. */
 :root { --dsw-alias-label-primary: #1f2328; --dsw-alias-label-secondary: #44484d; --dsw-alias-label-tertiary: #6b7280; --dsw-alias-label-caption: #8b949e; --dsw-alias-bg-layer-2: #ffffff; --dsw-alias-border-l3: #e7e7e8; --dsw-alias-interactive-bg-hover: #f2f4f5; --dsw-alias-state-warn-primary: #b45309; --dsw-alias-state-error-primary: #dc2626; --dsw-alias-brand-primary: #158f9a; --dsw-alias-link: #0f766e; --dsw-elevation-prominent: 0 8px 30px rgba(15,23,42,.12); --console-gradient: linear-gradient(135deg,#158f9a,#3f56a8); --layer-discover: #0ea5e9; --layer-plan: #7c3aed; --layer-produce: #db2777; --layer-publish: #059669; --layer-attribute: #d97706; --dsw-alias-label-dimmed: #9aa1a9; --dsw-alias-label-primary-foreground: #ffffff; --dsw-alias-bg-base: #f7f8f9; --dsw-alias-bg-layer-1: #f7f8f9; --dsw-alias-bg-layer-3: #ffffff; --dsw-alias-bg-mask-1: rgba(15,23,42,.45); --dsw-alias-bg-module-platform: #eef0f2; --dsw-alias-toast-bg: #1f2328; --dsw-alias-tooltip-bg: #2b2f35; --dsw-alias-border-l2: #eeeff0; --dsw-alias-border-l4: #d0d3d6; --dsw-alias-button-primary-fill: #158f9a; --dsw-alias-button-primary-hover: #127079; --dsw-alias-button-ghost-active-fill: #e8ebed; --dsw-alias-button-ghost-active-border: #d0d3d6; --dsw-alias-interactive-bg-active: #e8ebed; --dsw-alias-state-success-primary: #059669; --dsw-alias-state-business-primary: #3f56a8; --dsw-alias-state-idle-primary: #8b949e; --dsw-elevation-soft: 0 1px 3px rgba(15,23,42,.1); --dsw-shadow-lv3: 0 12px 32px rgba(15,23,42,.2); --dsw-mask-blur: blur(8px); --dsw-static-neutral-bluish-00: #f5f7f8; }
-body { margin: 0; font-family: Manrope, 'Noto Sans SC', 'Avenir Next', system-ui, sans-serif; background: #f7f8f9; color: var(--dsw-alias-label-primary); }
+/* System font stacks only: the console loads no webfonts, so no family may be named that is not installed (MASTER.md §5). */
+body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif; background: #f7f8f9; color: var(--dsw-alias-label-primary); }
 @media (prefers-color-scheme: dark) {
   :root { --dsw-alias-label-primary: #e6e8ea; --dsw-alias-label-secondary: #b6bcc2; --dsw-alias-label-tertiary: #8b949e; --dsw-alias-label-caption: #6e7681; --dsw-alias-label-dimmed: #5f6772; --dsw-alias-bg-base: #101214; --dsw-alias-bg-layer-1: #101214; --dsw-alias-bg-layer-2: #16181b; --dsw-alias-bg-layer-3: #1d2126; --dsw-alias-bg-mask-1: rgba(0,0,0,.6); --dsw-alias-bg-module-platform: #22262c; --dsw-alias-toast-bg: #0d0f11; --dsw-alias-tooltip-bg: #323842; --dsw-alias-border-l2: #23272d; --dsw-alias-border-l3: #2a2f36; --dsw-alias-border-l4: #3a414b; --dsw-alias-button-primary-fill: #1ba2ad; --dsw-alias-button-primary-hover: #23b6c1; --dsw-alias-button-ghost-active-fill: #262b31; --dsw-alias-button-ghost-active-border: #3a414b; --dsw-alias-interactive-bg-hover: #1d2126; --dsw-alias-interactive-bg-active: #23282e; --dsw-alias-brand-primary: #28b3be; --dsw-alias-link: #57c7be; --dsw-alias-state-warn-primary: #e5a54d; --dsw-alias-state-error-primary: #f87171; --dsw-alias-state-success-primary: #34d399; --dsw-alias-state-business-primary: #98a8f0; --dsw-alias-state-idle-primary: #6e7681; --console-gradient: linear-gradient(135deg,#0e7b86,#32408a); }
   body { background: var(--dsw-alias-bg-base); }
   /* The warn stays light in dark mode, so the offline bar turns to the dark ink (7.4:1 on the amber). */
   .console-offline { color: #1f2328; }
 }
-/* Console shell chrome: 240px paper sidebar with hairline separators, italic serif wordmark on the teal→indigo gradient; Task 7 renders the shared views into .console-main. */
-.console-shell { box-sizing: border-box; display: grid; grid-template-columns: 240px minmax(0, 1fr); min-height: 100vh; }
-.console-nav { display: flex; flex-direction: column; gap: 2px; padding: 20px 12px 24px; background: var(--dsw-alias-bg-layer-2); border-right: 0.5px solid var(--dsw-alias-border-l3); }
-.console-brand { margin: 0 8px 18px; font-family: 'Bodoni Moda', serif; font-style: italic; font-size: 21px; line-height: 28px; letter-spacing: 0.02em; background: var(--console-gradient); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.console-subnav { display: flex; flex-direction: column; gap: 2px; margin: 2px 8px 6px 20px; padding-left: 10px; border-left: 0.5px solid var(--dsw-alias-border-l3); }
-.console-offline { position: fixed; top: 0; left: 0; right: 0; z-index: 1200; padding: 5px 12px; text-align: center; font-size: 12px; line-height: 18px; color: var(--dsw-static-neutral-bluish-00); background: var(--dsw-alias-state-warn-primary); }
-.console-main { box-sizing: border-box; width: 100%; max-width: 960px; margin: 0 auto; padding: 28px clamp(16px, 3vw, 32px) 48px; min-width: 0; }
-.console-badge { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 999px; background: var(--console-gradient); color: var(--dsw-alias-label-primary-foreground); font-size: 12px; line-height: 18px; font-weight: 500; white-space: nowrap; }
+/* The app frame is exactly one viewport tall: the offline bar is a grid row and the nav and main columns scroll independently (MASTER.md §3). */
+.console-shell { box-sizing: border-box; display: grid; grid-template-columns: 248px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); height: 100dvh; overflow: hidden; }
+.console-offline { grid-column: 1 / -1; grid-row: 1; margin: 0; padding: 6px 12px; text-align: center; font-size: var(--dt-fs-meta); line-height: var(--dt-lh-meta); color: var(--dsw-static-neutral-bluish-00); background: var(--dsw-alias-state-warn-primary); }
+.console-nav { grid-column: 1; grid-row: 2; display: flex; flex-direction: column; gap: 2px; min-height: 0; padding: 20px 12px 24px; overflow-y: auto; scrollbar-gutter: stable; overscroll-behavior: contain; background: var(--dsw-alias-bg-layer-2); border-right: 0.5px solid var(--dsw-alias-border-l3); }
+.console-main { grid-column: 2; grid-row: 2; box-sizing: border-box; min-height: 0; width: 100%; overflow-y: auto; scrollbar-gutter: stable; overscroll-behavior: contain; container-type: inline-size; }
+.console-main > main { display: block; max-width: 1040px; margin: 0 auto; padding: 32px clamp(20px, 4vw, 40px) 56px; }
+.console-brand { margin: 0 8px 18px; font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, 'Songti SC', STSong, serif; font-style: italic; font-size: 22px; line-height: 30px; letter-spacing: 0.02em; background: var(--console-gradient); -webkit-background-clip: text; background-clip: text; color: transparent; }
 /* Sidebar navigation: paper links over hairlines; the active page keeps its ink and takes the brand edge (labels clear 4.5:1 in both themes). */
-.console-nav h1 { margin: 0 8px 6px; font-size: 12px; line-height: 18px; font-weight: 600; letter-spacing: 0.02em; color: var(--dsw-alias-label-secondary); }
-.console-nav a { display: block; margin: 0 8px; padding: 5px 10px; border-radius: 6px; font-size: 13px; line-height: 20px; color: var(--dsw-alias-label-secondary); text-decoration: none; }
+/* The nav's own heading is screen-reader only: the brand names the console, and a visible heading here reads as an empty group. */
+.console-nav h1 { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
+.console-nav h1 + .console-nav-group { margin-top: 2px; }
+.console-nav-group { margin: 14px 8px 4px; font-size: var(--dt-fs-caption); line-height: var(--dt-lh-caption); font-weight: 600; letter-spacing: 0.05em; color: var(--dsw-alias-label-tertiary); }
+.console-nav a { display: block; box-sizing: border-box; min-height: 36px; margin: 0 8px; padding: 7px 10px; border-radius: var(--dt-radius-s); font-size: var(--dt-fs-body); line-height: var(--dt-lh-body); color: var(--dsw-alias-label-secondary); text-decoration: none; transition: background-color var(--dt-speed) ease, color var(--dt-speed) ease; }
 .console-nav a:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
 .console-nav a[aria-current='page'] { background: var(--dsw-alias-interactive-bg-active); box-shadow: inset 2px 0 0 var(--dsw-alias-brand-primary); color: var(--dsw-alias-label-primary); font-weight: 600; }
+.console-nav a:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: -2px; }
+.console-badge { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 999px; background: var(--console-gradient); color: var(--dsw-alias-label-primary-foreground); font-size: var(--dt-fs-caption); line-height: var(--dt-lh-caption); font-weight: 500; white-space: nowrap; }
 /* Inbox composes and the publish-gate bar, on the same paper and hairlines as the shell. */
 .console-compose { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin: 0 0 20px; }
-.console-compose textarea { box-sizing: border-box; width: 100%; padding: 8px 12px; border: 0.5px solid var(--dsw-alias-border-l4); border-radius: 8px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); font: inherit; resize: vertical; }
+.console-compose textarea { box-sizing: border-box; width: 100%; padding: 10px 12px; border: 0.5px solid var(--dsw-alias-border-l4); border-radius: var(--dt-radius-m); background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); font: inherit; font-size: var(--dt-fs-body); line-height: var(--dt-lh-body); resize: vertical; }
+.console-compose textarea:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 1px; }
 .console-compose-follow { margin: 16px 0 0; }
-.console-gate { display: flex; align-items: center; gap: 8px; margin: 0 0 16px; padding: 10px 12px; border: 0.5px solid var(--dsw-alias-border-l3); border-radius: 8px; background: var(--dsw-alias-bg-layer-2); }
-.console-gate-stage { font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-secondary); }
+.console-gate { display: flex; align-items: center; gap: 8px; margin: 0 0 16px; padding: 12px; border: 0.5px solid var(--dsw-alias-border-l3); border-radius: var(--dt-radius-m); background: var(--dsw-alias-bg-layer-2); }
+.console-gate-stage { font-size: var(--dt-fs-meta); line-height: var(--dt-lh-meta); color: var(--dsw-alias-label-secondary); }
+/* Below 720px the frame gives way to the document: the nav sticks to the top as a horizontal bar and the page scrolls as one. */
 @media (max-width: 720px) {
-  .console-shell { grid-template-columns: minmax(0, 1fr); }
-  .console-nav { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px; padding: 12px 16px; border-right: 0; border-bottom: 0.5px solid var(--dsw-alias-border-l3); }
-  .console-brand { margin: 0 12px 0 0; }
+  .console-shell { display: block; height: auto; min-height: 100dvh; overflow: visible; }
+  .console-nav { position: sticky; top: 0; z-index: 100; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px; padding: 12px 16px; border-right: 0; border-bottom: 0.5px solid var(--dsw-alias-border-l3); overflow: visible; }
+  .console-brand { margin: 0 12px 0 0; font-size: 20px; line-height: 28px; }
   .console-nav h1 { margin: 0 12px 0 0; }
-  .console-subnav { display: none; }
+  .console-nav-group { display: none; }
+  .console-main { overflow: visible; }
+  .console-main > main { padding: 20px 16px 40px; }
 }
 
-/* Accounts page (SP2): platform cards, state badges, the login modal and its forms. */
-.console-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
-.console-card { display: flex; flex-direction: column; gap: 8px; padding: 14px; border: 0.5px solid var(--dsw-alias-border-l3); border-radius: 10px; background: var(--dsw-alias-bg-layer-2); }
-.console-card-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; font-weight: 600; color: var(--dsw-alias-label-primary); }
-.console-state { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; padding: 0 10px; border-radius: 999px; font-size: 12px; line-height: 18px; white-space: nowrap; }
+/* Accounts page (SP2): platform cards, state badges, the login modal and its forms; the buttons themselves are the shared Button primitive. */
+.console-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.console-card { display: flex; flex-direction: column; gap: 8px; padding: 16px; border: 0.5px solid var(--dsw-alias-border-l3); border-radius: var(--dt-radius-m); background: var(--dsw-alias-bg-layer-2); }
+.console-card-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: var(--dt-fs-title); line-height: var(--dt-lh-title); font-weight: 600; color: var(--dsw-alias-label-primary); }
+.console-state { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 0 10px; border-radius: 999px; font-size: var(--dt-fs-meta); line-height: var(--dt-lh-meta); white-space: nowrap; }
 .console-state-ok { color: var(--dsw-alias-state-success-primary, #059669); background: var(--dsw-alias-state-success-muted, rgba(5, 150, 105, 0.12)); }
 .console-state-off { color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-interactive-bg-hover); }
-.console-card-note { font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-secondary); }
-.console-card-actions { display: flex; gap: 8px; margin-top: auto; }
-.console-card-actions button, .console-modal-card button { min-height: 44px; min-width: 44px; padding: 0 14px; border: 0; border-radius: 8px; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); font: inherit; cursor: pointer; }
-.console-card-actions button:hover, .console-modal-card button:hover { background: var(--dsw-alias-interactive-bg-active); }
+.console-card-note { font-size: var(--dt-fs-meta); line-height: var(--dt-lh-meta); color: var(--dsw-alias-label-secondary); }
+.console-card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; }
 .console-modal { position: fixed; inset: 0; z-index: 1100; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.45); }
-.console-modal-card { display: flex; flex-direction: column; gap: 12px; width: min(360px, 90vw); padding: 20px; border-radius: 12px; background: var(--dsw-alias-bg-layer-2); }
-.console-modal-card h2 { margin: 0; font-size: 16px; color: var(--dsw-alias-label-primary); }
+.console-modal-card { display: flex; flex-direction: column; gap: 12px; width: min(400px, 92vw); max-height: 90vh; overflow: auto; padding: 20px; border-radius: var(--dt-radius-l); background: var(--dsw-alias-bg-layer-2); }
+.console-modal-card h2 { margin: 0; font-size: var(--dt-fs-head); line-height: var(--dt-lh-head); color: var(--dsw-alias-label-primary); }
 .console-qr img { width: 240px; height: 240px; object-fit: contain; }
 .console-form { display: flex; flex-direction: column; gap: 8px; }
-.console-form label { font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-secondary); }
-.console-form input { min-height: 44px; padding: 8px 12px; border: 0.5px solid var(--dsw-alias-border-l4); border-radius: 8px; background: var(--dsw-alias-bg-layer-1, transparent); color: var(--dsw-alias-label-primary); font: inherit; }
-.console-form button[type='submit'] { background: var(--dsw-alias-state-success-primary, #059669); color: var(--dsw-alias-label-primary-foreground, #fff); }
-.console-danger { background: var(--dsw-alias-state-warn-primary, #d97706) !important; color: var(--dsw-alias-label-primary-foreground, #fff) !important; }
-@media (prefers-reduced-motion: reduce) { .console-modal, .console-modal * { transition: none; } }
+.console-form label { font-size: var(--dt-fs-meta); line-height: var(--dt-lh-meta); color: var(--dsw-alias-label-secondary); }
+.console-form input { min-height: var(--dt-touch-h); padding: 8px 12px; border: 0.5px solid var(--dsw-alias-border-l4); border-radius: var(--dt-radius-s); background: var(--dsw-alias-bg-layer-1, transparent); color: var(--dsw-alias-label-primary); font: inherit; font-size: var(--dt-fs-body); line-height: var(--dt-lh-body); }
+.console-form input:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 1px; }
+/* The destructive fill must outrank `.dt-btn-ghost`, whose stylesheet the panel injects after this skin. */
+.console-danger { background: var(--dsw-alias-state-error-primary, #dc2626) !important; color: var(--dsw-alias-label-primary-foreground, #fff) !important; }
+@media (prefers-reduced-motion: reduce) { .console-nav a, .console-modal, .console-modal * { transition: none; } }
