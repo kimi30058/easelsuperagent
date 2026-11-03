@@ -42,23 +42,22 @@ const goto = async (hash: string) => {
   await settle()
 }
 
-it('renders the calendar records grouped by date, latest first, every field as written', async () => {
+it('renders each record as a card row: platform and topic lead, every other field follows', async () => {
   served.calendar = () => reply({ entries: [
-    { date: '2026-11-02', topic: '选题二', platforms: ['xhs', 'dy'] },
+    { date: '2026-11-02', topic: '选题二', platforms: ['xhs', 'dy'], url: 'https://e.example/2' },
     { date: '2026-11-04', topic: '选题四' },
-    { date: '2026-11-02', topic: '另一条', note: { week: 2 } },
+    { date: '2026-11-02', note: { week: 2 }, title: '无主题记录' },
   ] })
   await mountConsole()
   await goto('#/calendar')
   expect(all('.dt-section-name').map(name => name.textContent)).toEqual(['2026-11-04', '2026-11-02'])
-  expect(all('.dt-count').map(count => count.textContent)).toEqual(['1', '2'])
-  expect(all('.dt-kv dt').map(term => term.textContent))
-    .toEqual(['date', 'topic', 'date', 'topic', 'platforms', 'date', 'topic', 'note'])
-  expect(all('.dt-kv').map(card => [...card.querySelectorAll('dd')].map(value => value.textContent))).toEqual([
-    ['2026-11-04', '选题四'],
-    ['2026-11-02', '选题二', '["xhs","dy"]'],
-    ['2026-11-02', '另一条', '{"week":2}'],
-  ])
+  expect(all('.console-entry-title').map(title => title.textContent)).toEqual(['选题四', '[xhs][dy]选题二', '无主题记录'])
+  // 头行之外的每个字段（含未知字段）都在次行完整出现；date 由分组标题承载，卡内省略
+  const second = all('.dt-kv')[1]!
+  expect([...second.querySelectorAll('dt')].map(term => term.textContent)).toEqual(['url'])
+  expect(second.querySelector('dd')?.textContent).toBe('https://e.example/2')
+  const third = all('.dt-kv')[2]!
+  expect([...third.querySelectorAll('dt')].map(term => term.textContent)).toEqual(['note'])
 })
 
 it('lists the personas and the skills of the workspace', async () => {
@@ -75,10 +74,14 @@ it('lists the personas and the skills of the workspace', async () => {
   expect(all('.dt-row-meta').map(meta => meta.textContent)).toEqual(['营销文案写作', '搜索引擎优化'])
 })
 
-it('shows the empty calendar state while the workspace has none recorded', async () => {
+it('shows the empty state with its guidance action while the workspace has none recorded', async () => {
   served.calendar = () => reply({ error: 'No calendar recorded yet' }, 404)
   await mountConsole()
   await goto('#/calendar')
-  expect(document.querySelector('p.dt-hint')?.textContent).toBe(zh['console.emptyCalendar'])
-  expect(all('.dt-kv')).toEqual([])
+  expect(document.querySelector('.dt-empty-title')?.textContent).toBe(zh['console.emptyCalendar'])
+  const action = document.querySelector<HTMLButtonElement>('.dt-empty-action button')
+  expect(action?.textContent).toBe(zh['console.emptyCalendarAction'])
+  await act(async () => { action!.click(); await new Promise(resolve => setTimeout(resolve, 0)) })
+  await settle()
+  expect(location.hash).toBe('#/messages')
 })

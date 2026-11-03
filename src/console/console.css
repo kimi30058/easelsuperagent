@@ -32,6 +32,9 @@ body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang S
 .console-compose-follow { margin: 16px 0 0; }
 .console-gate { display: flex; align-items: center; gap: 8px; margin: 0 0 16px; padding: 12px; border: 0.5px solid var(--dsw-alias-border-l3); border-radius: var(--dt-radius-m); background: var(--dsw-alias-bg-layer-2); }
 .console-gate-stage { font-size: var(--dt-fs-meta); line-height: var(--dt-lh-meta); color: var(--dsw-alias-label-secondary); }
+/* Calendar page: one record per card row — the platforms bracket the topic in the head line, every other field follows beneath. */
+.console-entry-title { flex-wrap: wrap; }
+.console-entry-platform { flex: none; margin-right: 4px; font-size: var(--dt-fs-meta); line-height: var(--dt-lh-meta); font-weight: 400; color: var(--dsw-alias-label-tertiary); }
 /* Below 720px the frame gives way to the document: the nav sticks to the top as a horizontal bar and the page scrolls as one. */
 @media (max-width: 720px) {
   .console-shell { display: block; height: auto; min-height: 100dvh; overflow: visible; }
