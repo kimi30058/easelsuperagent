@@ -270,6 +270,7 @@ div.dt-preview-head { color: var(--dsw-alias-label-secondary); }
 @media (prefers-reduced-motion: reduce) {
   .dt-tab, .dt-segment, .dt-switch-thumb, .dt-spinner g, .dt-btn-busy .dt-btn-icon svg, .dt-tooltip { transition: none; animation: none; }
   .dt-btn, .dt-pill, .dt-nav-item, .dt-settings-link, .dt-trigger-link { transition: none; }
+  button.dt-stat-tile { transition: none; }
   .dt-toast { animation: dt-toast-fade 1000ms ease var(--dt-toast-hold, 3000ms) forwards; }
 }
 .dt-page .dt-tab { height: var(--dt-control-h); padding: 0 2px; border: 0; border-radius: 0; color: var(--dsw-alias-label-tertiary); font-size: var(--dt-fs-body); }

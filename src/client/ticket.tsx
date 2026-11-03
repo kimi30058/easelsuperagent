@@ -76,7 +76,7 @@ function MandateDetails({ ticket, actor }: { ticket: TicketPageView; actor: stri
     return item.name === 'sender' ? item.value : t('yes')
   }
   const { legacy } = ticket.basis
-  // Omit `sender` when it matches `actor`, which is already shown on the status line.
+  // Omit `sender` when it matches `actor`, which is already shown on the headline card.
   const facts = ticket.basis.facts.filter(item => !(item.name === 'sender' && item.value === actor))
   const direction = decision?.direction
   const rows: [string, ReactNode][] = decision ? [
@@ -163,7 +163,7 @@ export function TicketPage({ id }: { id: string }) {
         context={thread.context} />)}</ul>
     </Section>}
     <div className="dt-details">
-      {/* A single Assignment adds nothing beyond the status line; list Assignments only once work has been resumed or handed over. */}
+      {/* A single Assignment adds nothing beyond the headline card; list Assignments only once work has been resumed or handed over. */}
       {data.assignments.length > 1 && <Details icon="queue" title={`${t('term.assignment')} · ${data.assignments.length}`} open><Assignments
         ticket={data} /></Details>}
       {data.environment.length > 0 && <Details icon="settings" title={t('term.environment')}>

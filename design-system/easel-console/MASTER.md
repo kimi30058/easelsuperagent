@@ -41,6 +41,7 @@
 |---|---|
 | `dt-section` | 区块白卡：bg-layer-2、发丝线、radius-m、padding 16 |
 | `dt-list` `dt-row` | 卡片行列表：gap 8、每行独立白卡 |
+| `.dt-ticket-headline` | 票详情状态卡头——page 字阶阶段标 + Mandate 事实网格 |
 
 ### 控件与几何
 

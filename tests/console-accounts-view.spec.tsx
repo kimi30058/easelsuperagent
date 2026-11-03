@@ -161,11 +161,15 @@ it('asks before logout and calls the endpoint once confirmed', async () => {
 
 it('opens the credentials modal from the card, saves all four fields, and shows the reply', async () => {
   serveCards(SEVEN_CARDS)
-  api['/api/accounts/wechat-oa/credentials'] = (method) => method === 'GET'
-    ? reply({ configured: true, appIdMasked: 'wx12****', name: '主号', author: '阿一' })
-    : reply({ ok: true, message: '已保存并验证通过' })
+  let asked = 0
+  api['/api/accounts/wechat-oa/credentials'] = (method) => {
+    if (method === 'GET') { asked += 1; return reply({ configured: true, appIdMasked: 'wx12****', name: '主号', author: '阿一' }) }
+    return reply({ ok: true, message: '已保存并验证通过' })
+  }
   await mountConsole()
   await goto('#/accounts')
+  // 身份区回显凭证状态：配置过显示脱敏 AppID（终审 I3）
+  expect(document.querySelector('.console-card[data-platform="wechat-oa"] .console-card-credentials')?.textContent).toBe('wx12****')
   // 按钮是动作词：「凭证（发布）」名词不得在按钮上再出现一遍（main 侧断言意图，随合并保留）
   expect(all(`.console-card[data-platform='wechat-oa'] button`).some(button => button.textContent === zh['console.credentials'])).toBe(false)
   await click(all('.console-card[data-platform="wechat-oa"] button')
@@ -185,6 +189,12 @@ it('opens the credentials modal from the card, saves all four fields, and shows 
   expect(posted.some(call => call.path === '/api/accounts/wechat-oa/credentials'
     && JSON.stringify(call.body).includes('"appId":"wx1234567890"') && JSON.stringify(call.body).includes('"author"'))).toBe(true)
   expect(modal.textContent).toContain('已保存并验证通过')
+  // 模态收口回灌身份区：关闭时重拉凭证，掩码回显不丢
+  await click([...modal.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === zh['close'])!)
+  await settle()
+  expect(document.querySelector('.console-modal-card')).toBeNull()
+  expect(asked).toBeGreaterThanOrEqual(2)
+  expect(document.querySelector('.console-card[data-platform="wechat-oa"] .console-card-credentials')?.textContent).toBe('wx12****')
 })
 
 it('keeps the modal open with the error when saving fails', async () => {
@@ -194,6 +204,9 @@ it('keeps the modal open with the error when saving fails', async () => {
     : reply({ error: 'AppID 无效' }, 400)
   await mountConsole()
   await goto('#/accounts')
+  // 未配置时身份区明说，绝不出空掩码（main 侧「未配置不显示掩码」意图，随合并保留）
+  expect(document.querySelector('.console-card[data-platform="wechat-oa"] .console-card-credentials')?.textContent).toBe(zh['console.notConfigured'])
+  expect(container!.textContent).not.toContain('****')
   await click(all('.console-card[data-platform="wechat-oa"] button')
     .find(button => button.textContent === zh['console.credentialsConfigure'])!)
   await type(document.getElementById('credential-appid') as HTMLInputElement, 'bad')

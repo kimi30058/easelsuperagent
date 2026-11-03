@@ -51,6 +51,7 @@ export function AccountsPage(): JSX.Element {
   const [loginFor, setLoginFor] = useState<{ key: string; name: string } | undefined>()
   const [confirmLogout, setConfirmLogout] = useState<string | undefined>()
   const [credentialsOpen, setCredentialsOpen] = useState(false)
+  const [credentials, setCredentials] = useState<CredentialsView | undefined>()
   const [verifyNote, setVerifyNote] = useState<Record<string, string>>({})
   const alive = useRef(true)
   useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
@@ -59,6 +60,12 @@ export function AccountsPage(): JSX.Element {
     catch { setOffline(true) }
   }, [])
   useEffect(() => { void load() }, [load])
+  // 公众号凭证状态随页拉取：身份区回显（脱敏 AppID / 未配置）靠它，模态保存收口后重拉。
+  const loadCredentials = useCallback(async () => {
+    await accountsFetch<CredentialsView>('/accounts/wechat-oa/credentials')
+      .then(setCredentials).catch(() => setCredentials(undefined))
+  }, [])
+  useEffect(() => { void loadCredentials() }, [loadCredentials])
   // 开页后台真校验：逐平台刷新昵称/头像并写 localStorage（Easel 验证过的自愈节奏）。
   useEffect(() => {
     if (cards === undefined) return
@@ -108,6 +115,7 @@ export function AccountsPage(): JSX.Element {
     <div className="console-cards">
       {cards.map(card => <AccountCardView key={card.platform} card={card} whoami={whoami[card.platform]}
         verifyNote={verifyNote[card.platform] ?? ''}
+        credentials={card.backend === 'wechat-oa' ? credentials : undefined}
         onLogin={card.backend === 'wechat-oa' ? () => setLoginFor({ key: 'wechat-oa-mp', name: t('console.mpSession') })
           : () => setLoginFor({ key: card.platform, name: card.name })}
         onVerify={() => { void verify(card.platform) }}
@@ -124,7 +132,7 @@ export function AccountsPage(): JSX.Element {
         </div>
       </div>}
     </div>
-    {credentialsOpen && <CredentialsModal onClose={() => { setCredentialsOpen(false); void load() }} />}
+    {credentialsOpen && <CredentialsModal onClose={() => { setCredentialsOpen(false); void load(); void loadCredentials() }} />}
   </>
 }
 
@@ -138,8 +146,9 @@ function Avatar({ name, src }: { name: string; src: string }): JSX.Element {
 }
 
 /** One platform's card: the state badge up top, a fixed-height identity row in the middle, actions pinned to the bottom. */
-function AccountCardView({ card, whoami, verifyNote, onLogin, onVerify, onLogout, onCredentials }: {
-  card: AccountCard; whoami?: WhoamiView; verifyNote: string; onLogin(): void; onVerify(): void; onLogout(): void
+function AccountCardView({ card, whoami, verifyNote, credentials, onLogin, onVerify, onLogout, onCredentials }: {
+  card: AccountCard; whoami?: WhoamiView; verifyNote: string; credentials?: CredentialsView
+  onLogin(): void; onVerify(): void; onLogout(): void
   onCredentials?: () => void
 }): JSX.Element {
   const { t } = usePanel()
@@ -155,7 +164,10 @@ function AccountCardView({ card, whoami, verifyNote, onLogin, onVerify, onLogout
         ? <><Avatar name={whoami?.name ?? ''} src={whoami?.avatar ?? ''} />
           <span className="console-card-name">{whoami?.name || card.note}</span></>
         : <span className="console-card-note">{card.note}</span>}
-      {card.backend === 'wechat-oa' && <span className="console-card-note console-card-credentials">{t('console.credentials')}</span>}
+      {/* 公众号身份区回显凭证状态：配置过显示脱敏 AppID，未配置明说，不再恒显名词占位。 */}
+      {card.backend === 'wechat-oa' && <span className="console-card-note console-card-credentials">
+        {credentials !== undefined && credentials.configured && credentials.appIdMasked !== ''
+          ? credentials.appIdMasked : t('console.notConfigured')}</span>}
     </div>
     <div className="console-card-actions">
       {!loggedIn && <Button variant="primary" onClick={onLogin}>
