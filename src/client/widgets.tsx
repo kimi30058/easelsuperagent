@@ -145,3 +145,30 @@ export function CheckSetupButton() {
   return <Button variant="outline" size="sm" icon={icon} disabled={action.busy}
     onClick={() => { void action.run() }}>{t('setupCheck')}</Button>
 }
+/** The page header band: the page's name, a one-line hint under it, and the page's own actions on the right. */
+export function PageHeader({ title, hint, actions }: { title: string; hint?: string; actions?: ReactNode }) {
+  return <header className="dt-header">
+    <div className="dt-header-text">
+      <h2 className="dt-header-title">{title}</h2>
+      {hint !== undefined && <p className="dt-header-hint">{hint}</p>}
+    </div>
+    {actions !== undefined && <div className="dt-header-actions">{actions}</div>}
+  </header>
+}
+/** One statistic as Easel's dash tiles carry it: the number first, its label below; the whole tile is a button when it leads somewhere. */
+export function StatTile({ value, label, onClick }: { value: ReactNode; label: string; onClick?: () => void }) {
+  const body = <><span className="dt-stat-tile-value">{value}</span><span className="dt-stat-tile-label">{label}</span></>
+  return onClick === undefined ? <div className="dt-stat-tile">{body}</div>
+    : <button type="button" className="dt-stat-tile" onClick={onClick}>{body}</button>
+}
+/** The page's numbers as one row of stat tiles. */
+export function StatRow({ children }: { children: ReactNode }) { return <div className="dt-stat-row">{children}</div> }
+/** The page's empty state: what is missing and the one action that fills it. */
+export function EmptyState({ icon, title, hint, action }: { icon: IconName; title: string; hint?: string; action?: ReactNode }) {
+  return <div className="dt-empty">
+    <span className="dt-empty-icon"><Icon name={icon} size={20} /></span>
+    <p className="dt-empty-title">{title}</p>
+    {hint !== undefined && <p className="dt-empty-hint">{hint}</p>}
+    {action !== undefined && <div className="dt-empty-action">{action}</div>}
+  </div>
+}

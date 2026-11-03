@@ -383,3 +383,21 @@ a.dt-btn, a.dt-btn:hover { text-decoration: none; }
 .dt-admission-slot { display: inline-flex; flex: none; width: 16px; }
 .dt-info-warn { color: var(--dsw-alias-state-warn-primary); }
 .dt-field-segmented { max-width: 240px; }
+/* Page chrome (relayout spec §1): the header band, stat tiles, and the empty state. */
+.dt-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; }
+.dt-header-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dt-header-title { margin: 0; font-size: var(--dt-fs-page); line-height: var(--dt-lh-page); font-weight: 700; color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; }
+.dt-header-hint { margin: 0; font-size: var(--dt-fs-meta); line-height: var(--dt-lh-meta); color: var(--dsw-alias-label-secondary); }
+.dt-header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dt-stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+.dt-stat-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 14px 16px; border: 0.5px solid var(--dsw-alias-border-l3); border-radius: var(--dt-radius-m); background: var(--dsw-alias-bg-layer-2); }
+button.dt-stat-tile { cursor: pointer; }
+button.dt-stat-tile:hover { border-color: var(--dsw-alias-border-l4); }
+button.dt-stat-tile:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
+.dt-stat-tile-value { font-size: var(--dt-fs-page); line-height: var(--dt-lh-page); font-weight: 800; letter-spacing: -0.5px; color: var(--dsw-alias-label-primary); font-variant-numeric: tabular-nums; }
+.dt-stat-tile-label { font-size: var(--dt-fs-caption); line-height: var(--dt-lh-caption); color: var(--dsw-alias-label-secondary); }
+.dt-empty { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 40px 16px; text-align: center; }
+.dt-empty-icon { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: var(--dt-radius-m); background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-tertiary); }
+.dt-empty-title { margin: 6px 0 0; font-size: var(--dt-fs-body); line-height: var(--dt-lh-body); font-weight: 500; color: var(--dsw-alias-label-secondary); }
+.dt-empty-hint { margin: 0; font-size: var(--dt-fs-meta); line-height: var(--dt-lh-meta); color: var(--dsw-alias-label-tertiary); }
+.dt-empty-action { margin-top: 8px; }
