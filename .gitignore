@@ -9,8 +9,6 @@ cookies.json
 .venv/
 __pycache__/
 .codegraph/
-CLAUDE.md
-CONTEXT.md
-docs/
+.DS_Store
 # account_stats.py 解析出的错位输出根（ADR-0007 深度差）：jsonl 流浪文件落此，执行根的正式历史由 sidecar 写
 skills/outputs/
