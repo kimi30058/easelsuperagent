@@ -12,7 +12,7 @@ usePanel()
 it('keeps a person\'s own value where another save changed the same setting, and says so', async () => {
   await mount()
   await click(zh['tab.execution'])
-  await click(find(zh['tab.settings'], '.dt-status-head button'))
+  await click(find(zh['tab.settings'], '.dt-header button'))
   await type(field<HTMLInputElement>(zh.maxWorkers), '6')
   server.settings = { ...server.settings, executor: { ...server.settings.executor, maxWorkers: 4 } }
   server.revisions.executor = 1
@@ -77,7 +77,7 @@ it('loads configuration history on demand with localized changes, Source field l
 it('shows save and discard only while a settings block has edits, at the end of that block', async () => {
   await mount()
   await click(zh['tab.execution'])
-  await click(find(zh['tab.settings'], '.dt-status-head button'))
+  await click(find(zh['tab.settings'], '.dt-header button'))
   expect(all('.dt-savebar')).toHaveLength(0)
   await type(field<HTMLInputElement>(zh.maxWorkers), '6')
   expect(all('.dt-savebar')).toHaveLength(1)
@@ -132,7 +132,8 @@ it('lists the settings groups stages first, opens each stage\'s group from its s
   expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['term.source'])
   for (const [tab, group] of [['来源', '来源'], ['评估', '评估'], ['执行', '执行']] as const) {
     await click(find(tab, '[role="tab"]'))
-    await click(find(zh['tab.settings'], '.dt-status-head button'))
+    // The execution page carries its settings entry in the new header band; the other status pages still open from StatusHead.
+    await click(find(zh['tab.settings'], '.dt-status-head button, .dt-header button'))
     expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(group)
   }
   // The Trigger stage has no settings, so its status offers none.

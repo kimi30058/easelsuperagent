@@ -45,7 +45,7 @@ it('renders the console sidebar over the shared overview', async () => {
 it('switches pages by hash, marking the active page and carrying record ids', async () => {
   await mountConsole()
   await goto('#/execution')
-  expect(text()).toContain(zh.executorRunning)
+  expect(text()).toContain(zh.executionStatusIntro)
   expect(all('.console-nav a').find(link => link.textContent === zh['tab.execution'])?.getAttribute('aria-current')).toBe('page')
   await goto('#/execution/t1')
   expect(document.querySelector('.dt-page-title h2')?.textContent).toBe('修复回归')

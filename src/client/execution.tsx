@@ -3,13 +3,14 @@ import { useRef, useState } from 'react'
 import { TICKET_FILTERS, type TicketFilter } from '../app/api.ts'
 import { LIMITS } from '../limits.ts'
 import { usePoll, type SettingsView, type SourceView, type StateView } from './api.ts'
-import { DisclosureRow, Icon, InfoTip, Input, Pill } from './controls.tsx'
+import { Button, DisclosureRow, Icon, InfoTip, Input, Pill } from './controls.tsx'
 import { SaveBar } from './draft.tsx'
 import { usePanel } from './provider.tsx'
+import { settingsRoute } from './route.ts'
 import { TicketLine } from './rows.tsx'
 import { ConfigHistory, Field, Fields, ModelField, numberOf, useBlockDraft, useSettings } from './settings-kit.tsx'
 import { localized } from './text.ts'
-import { ConfirmButton, Hint, LabelValue, LoadMore, LoadState, Section, StatusHead } from './widgets.tsx'
+import { ConfirmButton, EmptyState, Hint, LoadMore, LoadState, PageHeader, Section, StatRow, StatTile } from './widgets.tsx'
 
 export function ExecutionStatus({ filter: current, state, reload }: {
   filter: TicketFilter; state: StateView; reload: () => Promise<void>
@@ -20,22 +21,21 @@ export function ExecutionStatus({ filter: current, state, reload }: {
   const { paused, load: { maxWorkers } } = state
   // Pausing uses its own block revision so toggling pause does not invalidate an open Execution settings draft.
   const pause = async () => { await call('POST executor/pause', { body: { paused: !paused } }); await reload() }
-  const status = state.setup.problem ? { tone: 'warning', label: t('executorWaitingSetup') } : paused ? { tone: 'warning',
-    label: t('processingPaused') }
-    : { tone: 'ongoing', label: t('executorRunning') }
+  // The hint line carries what most needs knowing right now: a setup problem or a pause beats the steady-state intro.
+  const hint = state.setup.problem ? t('executorWaitingSetup') : paused ? t('processingPaused') : t('executionStatusIntro')
   const action = paused ? 'resumeProcessing' : 'pauseProcessing'
   return <>
-    <StatusHead hint={t('executionStatusIntro')} settings="execution" />
-    <div className="dt-row-meta dt-status-line">
-      <span className="dt-status-text" data-state={status.tone}>{status.label}</span>
-      {!state.setup.problem && <>
-        <LabelValue label={t('executingLabel')}
-          value={`${state.load.running} / ${maxWorkers}`} /><LabelValue label={t('queuedLabel')} value={state.load.queued} />
-      </>}
+    <PageHeader title={t('tab.execution')} hint={hint} actions={<>
+      <Button variant="ghost" size="sm" icon={<Icon name="settings" size={14} />}
+        onClick={() => navigate(settingsRoute('execution'))}>{t('tab.settings')}</Button>
       <ConfirmButton variant="outline" icon={paused ? 'play' : 'pause'} label={t(action)} title={t(action)} message={t(paused
         ? 'resumeProcessingConfirm' : 'pauseProcessingConfirm')}
         onConfirm={pause} />
-    </div>
+    </>} />
+    {!state.setup.problem && <StatRow>
+      <StatTile value={`${state.load.running} / ${maxWorkers}`} label={t('executingLabel')} />
+      <StatTile value={state.load.queued} label={t('queuedLabel')} />
+    </StatRow>}
     <div className="dt-filters">
       {TICKET_FILTERS.map(value => <Pill key={value} active={current === value}
         onClick={() => { setLimit(20); navigate({ page: 'execution', query: value === 'open' ? {} : { filter: value } },
@@ -45,7 +45,9 @@ export function ExecutionStatus({ filter: current, state, reload }: {
     <LoadState error={error} loading={!data} />
     {data && (data.items.length ? <ul className="dt-list">{data.items.map(ticket => ticket.stage === 'person'
       ? <TicketLine key={ticket.id} ticket={ticket} question
-        onChanged={reloadTickets} /> : <TicketLine key={ticket.id} ticket={ticket} />)}</ul> : <Hint>{t('none')}</Hint>)}
+        onChanged={reloadTickets} /> : <TicketLine key={ticket.id} ticket={ticket} />)}</ul>
+      : <EmptyState icon="queue" title={t('console.emptyExecutionTitle')} hint={t('console.emptyExecutionHint')}
+        action={<Button variant="primary" onClick={() => navigate({ page: 'messages' })}>{t('console.emptyExecutionAction')}</Button>} />)}
     {data?.next_offset != null && <LoadMore onMore={() => setLimit(limit + 20)} />}
   </>
 }

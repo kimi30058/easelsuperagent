@@ -460,6 +460,7 @@ Some generic modules still refer directly to GitHub or Feishu:
 | `tests/console-accounts.spec.ts` | The account domain's node side: the _login file protocol, runner lifecycle with pidfile reaping, whoami confidence and write-back, wechat credentials, and the `/api/*` routes with the self-configured root |
 | `tests/console-accounts-view.spec.tsx` | The accounts page: cards with whoami names and the offline state, the login modal's state machine, the SMS wall's inline validation, the logout confirm, and the credentials form |
 | `tests/console-inbox.spec.tsx`, `tests/console-content.spec.tsx` | The console inbox and content pages: the composes with the message id each retry reuses, the badge of console-born Threads, the Threads of other sources read-only, the publish gate's answers by stage, and the calendar, personas and skills |
+| `tests/console-execution-view.spec.tsx` | The execution page: the header band with the pause action, executor stat tiles, card rows, and the empty state's guidance |
 | `tests/draft.spec.ts`, `tests/prompt-config.spec.ts`, `tests/markdown.spec.ts`, `tests/marks.spec.ts` | Draft states, merges and the save bar's line; the prompt configuration by section and the line diff; the Markdown subset and its links; the mark of every state the views classify |
 | `tests/locales.spec.ts`, `tests/styles.spec.ts` | The copy in both languages, the stylesheet |
 | `tests/class-docs.spec.ts` | Every class in `src` has a JSDoc block before it |

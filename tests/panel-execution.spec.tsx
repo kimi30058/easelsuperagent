@@ -13,9 +13,9 @@ it('lists Tickets under Execution by who they wait on, with the Executor state a
       value: { zh: '已开启', en: 'on' } } } }] })]
   await mount()
   await click(zh['tab.execution'])
-  expect(document.querySelector('.dt-status-title')?.textContent).toBe(zh.statusTitle)
+  expect(document.querySelector('.dt-header-title')?.textContent).toBe(zh['tab.execution'])
   expect(server.requests.some(request => request.path === 'tickets?state=open&limit=20')).toBe(true)
-  expect(text()).toContain(zh.executorRunning)
+  expect(document.querySelector('.dt-header-hint')?.textContent).toBe(zh.executionStatusIntro)
   expect(all('.dt-chip').map(chip => chip.textContent)).toContain('GitHub#7自动合并已开启')
   await click(zh.idleLabel)
   expect(server.requests.some(request => request.path === 'tickets?state=idle&limit=20')).toBe(true)
@@ -23,9 +23,10 @@ it('lists Tickets under Execution by who they wait on, with the Executor state a
   await click(zh['ticket.ended'])
   expect(text()).toContain('旧工单')
   expect(text()).toContain(zh['outcome.stopped'])
-  expect(all('.dt-status-line .dt-lv').map(item => item.textContent)).toEqual(['执行中 2 / 3', '排队 0'])
+  expect(all('.dt-stat-tile-value').map(value => value.textContent)).toEqual(['2 / 3', '0'])
+  expect(all('.dt-stat-tile-label').map(label => label.textContent)).toEqual([zh.executingLabel, zh.queuedLabel])
   // The pause is its own action: an Execution settings draft started before it still saves.
-  await click(find(zh['tab.settings'], '.dt-status-head button'))
+  await click(find(zh['tab.settings'], '.dt-header button'))
   expect(tab(zh['tab.settings']).getAttribute('aria-selected')).toBe('true')
   expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['promptPart.runtime/work'])
   await type(field<HTMLInputElement>(zh.maxWorkers), '4')
@@ -122,7 +123,7 @@ it('offers a Ticket awaiting review its review place and Session in the page hea
 it('keeps what a person types in the Execution settings, converting it once on save', async () => {
   await mount()
   await click(zh['tab.execution'])
-  await click(find(zh['tab.settings'], '.dt-status-head button'))
+  await click(find(zh['tab.settings'], '.dt-header button'))
   const blocked = () => field<HTMLInputElement>(zh.blockedCommands), root = () => field<HTMLInputElement>(zh.executionDirectory),
     workers = () => field<HTMLInputElement>(zh.maxWorkers)
   // A separator typed before the next command, a space inside a path and a cleared number stay as typed.
