@@ -55,6 +55,7 @@ body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang S
 .console-state-ok { color: var(--dsw-alias-state-success-primary, #059669); background: var(--dsw-alias-state-success-muted, rgba(5, 150, 105, 0.12)); }
 .console-state-off { color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-interactive-bg-hover); }
 .console-card-note { font-size: var(--dt-fs-meta); line-height: var(--dt-lh-meta); color: var(--dsw-alias-label-secondary); }
+.console-card-credentials { flex-basis: 100%; }
 .console-card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; }
 .console-card-actions > .dt-btn { flex: 1 1 0; }
 .console-modal { position: fixed; inset: 0; z-index: 1100; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.45); }

@@ -1,4 +1,4 @@
-/** The accounts page: one card per platform with live state and whoami names, plus the login modal and its forms. */
+/** The accounts page: one card per platform with live state and whoami names, plus the login and credentials modals and their forms. */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Icon } from '../client/controls.tsx'
 import { usePanel } from '../client/provider.tsx'
@@ -49,6 +49,7 @@ export function AccountsPage(): JSX.Element {
   const [whoami, setWhoami] = useState<Record<string, WhoamiView>>(() => readWhoamiCache())
   const [loginFor, setLoginFor] = useState<{ key: string; name: string } | undefined>()
   const [confirmLogout, setConfirmLogout] = useState<string | undefined>()
+  const [credentialsOpen, setCredentialsOpen] = useState(false)
   const [verifyNote, setVerifyNote] = useState<Record<string, string>>({})
   const alive = useRef(true)
   useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
@@ -109,7 +110,8 @@ export function AccountsPage(): JSX.Element {
         onLogin={card.backend === 'wechat-oa' ? () => setLoginFor({ key: 'wechat-oa-mp', name: t('console.mpSession') })
           : () => setLoginFor({ key: card.platform, name: card.name })}
         onVerify={() => { void verify(card.platform) }}
-        onLogout={() => setConfirmLogout(card.platform)} />)}
+        onLogout={() => setConfirmLogout(card.platform)}
+        onCredentials={card.backend === 'wechat-oa' ? () => setCredentialsOpen(true) : undefined} />)}
       {loginFor !== undefined && <LoginModal platform={loginFor.key} name={loginFor.name} onClose={closeLogin} />}
       {confirmLogout !== undefined && <div className="console-modal" role="dialog" aria-modal="true">
         <div className="console-modal-card">
@@ -121,6 +123,7 @@ export function AccountsPage(): JSX.Element {
         </div>
       </div>}
     </div>
+    {credentialsOpen && <CredentialsModal onClose={() => { setCredentialsOpen(false); void load() }} />}
   </>
 }
 
@@ -134,8 +137,9 @@ function Avatar({ name, src }: { name: string; src: string }): JSX.Element {
 }
 
 /** One platform's card: the state badge up top, a fixed-height identity row in the middle, actions pinned to the bottom. */
-function AccountCardView({ card, whoami, verifyNote, onLogin, onVerify, onLogout }: {
+function AccountCardView({ card, whoami, verifyNote, onLogin, onVerify, onLogout, onCredentials }: {
   card: AccountCard; whoami?: WhoamiView; verifyNote: string; onLogin(): void; onVerify(): void; onLogout(): void
+  onCredentials?: () => void
 }): JSX.Element {
   const { t } = usePanel()
   // whoami 真校验先于 fast path 显示（Easel 语义：真值覆盖可能过期的标记）；未返回前显示 fast path。
@@ -150,7 +154,7 @@ function AccountCardView({ card, whoami, verifyNote, onLogin, onVerify, onLogout
         ? <><Avatar name={whoami?.name ?? ''} src={whoami?.avatar ?? ''} />
           <span className="console-card-name">{whoami?.name || card.note}</span></>
         : <span className="console-card-note">{card.note}</span>}
-      {card.backend === 'wechat-oa' && <CredentialsRow />}
+      {card.backend === 'wechat-oa' && <span className="console-card-note console-card-credentials">{t('console.credentials')}</span>}
     </div>
     <div className="console-card-actions">
       {!loggedIn && <Button variant="primary" onClick={onLogin}>
@@ -158,6 +162,7 @@ function AccountCardView({ card, whoami, verifyNote, onLogin, onVerify, onLogout
       </Button>}
       {loggedIn && <Button variant="outline" onClick={onVerify}>{t('console.verify')}</Button>}
       {loggedIn && <Button variant="ghost" onClick={onLogout}>{t('console.logout')}</Button>}
+      {card.backend === 'wechat-oa' && <Button variant="ghost" onClick={onCredentials}>{t('console.credentialsConfigure')}</Button>}
     </div>
     {verifyNote !== '' && <p className="console-card-note" role="status">{verifyNote}</p>}
   </div>
@@ -165,40 +170,52 @@ function AccountCardView({ card, whoami, verifyNote, onLogin, onVerify, onLogout
 
 interface CredentialsView { configured: boolean; appIdMasked: string; name: string; author: string }
 
-/** The wechat-oa card's credentials row: publishing rides on AppID/AppSecret, saved and verified in place. */
-function CredentialsRow(): JSX.Element {
+/** The wechat-oa credentials in their own modal: the API pair publishing rides on, saved and verified in place. */
+function CredentialsModal({ onClose }: { onClose(): void }): JSX.Element {
   const { t } = usePanel()
   const [view, setView] = useState<CredentialsView | undefined>()
-  const [open, setOpen] = useState(false)
-  const [fields, setFields] = useState({ appId: '', appSecret: '' })
+  const [fields, setFields] = useState({ appId: '', appSecret: '', name: '', author: '' })
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   useEffect(() => { void accountsFetch<CredentialsView>('/accounts/wechat-oa/credentials').then(setView).catch(() => undefined) }, [])
-  const refresh = (): void => { void accountsFetch<CredentialsView>('/accounts/wechat-oa/credentials').then(setView).catch(() => undefined) }
+  const close = useCallback((): void => onClose(), [onClose])
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => { if (event.key === 'Escape') close() }
+    window.addEventListener('keydown', onKey)
+    return () => { window.removeEventListener('keydown', onKey) }
+  }, [close])
   const save = (): void => {
     setBusy(true); setMessage('')
     void accountsFetch<{ ok: boolean; message: string }>('/accounts/wechat-oa/credentials',
-      { method: 'POST', body: JSON.stringify({ appId: fields.appId, appSecret: fields.appSecret,
-        name: view?.name ?? '', author: view?.author ?? '' }) })
+      { method: 'POST', body: JSON.stringify(fields) })
       .then(result => setMessage(result.message))
       .catch(error => setMessage(error.message))
-      .finally(() => { setBusy(false); refresh() })
+      .finally(() => setBusy(false))
   }
-  return <>
-    <div className="console-card-note">{t('console.credentials')}
-      {view?.configured && view.appIdMasked !== '' ? `：${view.appIdMasked}` : ''}</div>
-    <Button variant="ghost" onClick={() => { setOpen(previous => !previous) }}>{t('console.credentials')}</Button>
-    {open && <form className="console-form" onSubmit={event => { event.preventDefault(); save() }}>
-      <label htmlFor="credential-appid">{t('console.appId')}</label>
-      <input id="credential-appid" value={fields.appId}
-        onChange={event => setFields(previous => ({ ...previous, appId: event.target.value }))} />
-      <label htmlFor="credential-secret">{t('console.appSecret')}</label>
-      <input id="credential-secret" type="password" value={fields.appSecret}
-        onChange={event => setFields(previous => ({ ...previous, appSecret: event.target.value }))} />
-      {message !== '' && <p className="console-card-note" role="status">{message}</p>}
-      <Button variant="outline" disabled={busy} onClick={save}>{t('console.saveCredentials')}</Button>
-    </form>}
-  </>
+  return <div className="console-modal" role="dialog" aria-modal="true" aria-label={t('console.credentials')} onClick={close}>
+    <div className="console-modal-card" onClick={event => event.stopPropagation()}>
+      <h2>{t('console.credentials')}</h2>
+      {view?.configured && view.appIdMasked !== '' && <p className="console-card-note">{view.appIdMasked}</p>}
+      <p className="console-card-note">{t('console.credentialsHint')}</p>
+      <form className="console-form" onSubmit={event => { event.preventDefault(); save() }}>
+        <label htmlFor="credential-appid">{t('console.appId')}</label>
+        <input id="credential-appid" value={fields.appId}
+          onChange={event => setFields(previous => ({ ...previous, appId: event.target.value }))} />
+        <label htmlFor="credential-secret">{t('console.appSecret')}</label>
+        <input id="credential-secret" type="password" value={fields.appSecret}
+          onChange={event => setFields(previous => ({ ...previous, appSecret: event.target.value }))} />
+        <label htmlFor="credential-name">{t('console.credentialsName')}</label>
+        <input id="credential-name" value={fields.name}
+          onChange={event => setFields(previous => ({ ...previous, name: event.target.value }))} />
+        <label htmlFor="credential-author">{t('console.credentialsAuthor')}</label>
+        <input id="credential-author" value={fields.author}
+          onChange={event => setFields(previous => ({ ...previous, author: event.target.value }))} />
+        {message !== '' && <p className="console-card-note" role="status">{message}</p>}
+        <Button variant="primary" type="submit" className={busy ? 'dt-btn-busy' : undefined} disabled={busy}>{t('console.saveCredentials')}</Button>
+      </form>
+      <Button variant="ghost" onClick={close}>{t('close')}</Button>
+    </div>
+  </div>
 }
 
 /** The login modal: the whole scan flow of one platform, polled once a second. Esc, backdrop, or the close button

@@ -146,28 +146,43 @@ it('asks before logout and calls the endpoint once confirmed', async () => {
   expect(posted.filter(call => call.path === '/api/logout/bilibili').length).toBe(1)
 })
 
-it('shows and saves the wechat-oa credentials through the form', async () => {
-  serveCards(FOUR_CARDS.map(card => ({ ...card, loggedIn: false })))
-  let credentials = { configured: false, appIdMasked: '', name: '', author: '' }
-  api['/api/accounts/wechat-oa/credentials'] = method => method === 'GET'
-    ? reply(credentials)
-    : reply((credentials = { configured: true, appIdMasked: 'wx1234***90ab', name: '', author: '' }) && { ok: true, message: '公众号凭证已保存并验证通过' })
+it('opens the credentials modal from the card, saves all four fields, and shows the reply', async () => {
+  serveCards(FOUR_CARDS)
+  api['/api/accounts/wechat-oa/credentials'] = (method) => method === 'GET'
+    ? reply({ configured: true, appIdMasked: 'wx12****', name: '主号', author: '阿一' })
+    : reply({ ok: true, message: '已保存并验证通过' })
   await mountConsole()
   await goto('#/accounts')
-  expect(container!.textContent).toContain(zh['console.credentials'])
-  expect(container!.textContent).not.toContain('wx1234***90ab')           // 未配置时不显示
-  await act(async () => { cardButton('wechat-oa', zh['console.credentials']).click() })
+  await click(all('.console-card[data-platform="wechat-oa"] button')
+    .find(button => button.textContent === zh['console.credentialsConfigure'])!)
+  const modal = document.querySelector('.console-modal-card')!
+  expect(modal.querySelector('h2')?.textContent).toBe(zh['console.credentials'])
+  expect(modal.textContent).toContain('wx12****')
+  await type(document.getElementById('credential-appid') as HTMLInputElement, 'wx1234567890')
+  await type(document.getElementById('credential-secret') as HTMLInputElement, 'secret-x')
+  await type(document.getElementById('credential-name') as HTMLInputElement, '主号')
+  await click([...modal.querySelectorAll<HTMLButtonElement>('button')]
+    .find(button => button.textContent === zh['console.saveCredentials'])!)
   await settle()
-  const appId = container!.querySelector('.console-form input#credential-appid') as HTMLInputElement
-  const secret = container!.querySelector('.console-form input#credential-secret') as HTMLInputElement
-  await type(appId, 'wx1234567890ab')
-  await type(secret, 'sec')
-  await act(async () => { cardButton('wechat-oa', zh['console.saveCredentials']).click() })
+  expect(posted.some(call => call.path === '/api/accounts/wechat-oa/credentials'
+    && JSON.stringify(call.body).includes('"appId":"wx1234567890"') && JSON.stringify(call.body).includes('"author"'))).toBe(true)
+  expect(modal.textContent).toContain('已保存并验证通过')
+})
+
+it('keeps the modal open with the error when saving fails', async () => {
+  serveCards(FOUR_CARDS)
+  api['/api/accounts/wechat-oa/credentials'] = (method) => method === 'GET'
+    ? reply({ configured: false, appIdMasked: '', name: '', author: '' })
+    : reply({ error: 'AppID 无效' }, 400)
+  await mountConsole()
+  await goto('#/accounts')
+  await click(all('.console-card[data-platform="wechat-oa"] button')
+    .find(button => button.textContent === zh['console.credentialsConfigure'])!)
+  await type(document.getElementById('credential-appid') as HTMLInputElement, 'bad')
+  await click(all('.console-modal-card button')
+    .find(button => button.textContent === zh['console.saveCredentials'])!)
   await settle()
-  expect(posted.filter(call => call.path === '/api/accounts/wechat-oa/credentials').map(call => call.body))
-    .toEqual([{ appId: 'wx1234567890ab', appSecret: 'sec', name: '', author: '' }])
-  expect(container!.textContent).toContain('公众号凭证已保存并验证通过')
-  expect(container!.textContent).toContain('wx1234***90ab')                // 保存后回显脱敏 AppID
+  expect(document.querySelector('.console-modal-card')?.textContent).toContain('AppID 无效')
 })
 
 it('closes itself after success without cancelling the finished login', async () => {
