@@ -1,5 +1,5 @@
 /** The analytics file protocol: every path and read/write under outputs/_analytics, the calendar read, and the published→effect works join. */
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { LoginPlatform } from './login-protocol.ts'
 
@@ -20,7 +20,7 @@ export async function readLatest(root: string, platform: LoginPlatform): Promise
   } catch { return undefined }   // 缺失或撕裂（Review Focus 1）
 }
 
-/** Persist one fetch's full result atomically (tmp + rename, 照 writeMarker); the sidecar owns this file, the script owns the jsonl. */
+/** Persist one fetch's full result atomically (tmp + rename, 照 writeMarker); the sidecar owns this file and the jsonl. */
 export async function writeLatest(root: string, platform: LoginPlatform, value: Record<string, unknown>): Promise<void> {
   const target = latestPath(root, platform)
   await mkdir(analyticsDir(root), { recursive: true })
@@ -46,13 +46,13 @@ export async function readSpark(root: string, platform: LoginPlatform, limit = 9
   return points.slice(-limit)
 }
 
-/** jsonl 自记是 account_stats 的行为（should_record + 分层压缩）；bili/mp 两家脚本不写，sidecar 采集成功后代记一条
- *  秒级快照补上趋势（ts 与脚本同口径：epoch 秒）。account_stats 族仍归脚本，避免双写。 */
+/** 执行根的 jsonl 全权归 sidecar：account_stats 自写的 jsonl 落它错位解析的根（ADR-0007 深度差、无 CLI 覆盖、脚本禁改），
+ *  bili/mp 根本不写——七平台的趋势快照由本函数在每次采集成功后**追加**一条（ts 与脚本同口径：epoch 秒）。 */
 export async function appendSnapshot(root: string, platform: LoginPlatform,
   snap: { followers?: unknown; likes?: unknown; posts?: unknown }, now: number): Promise<void> {
   if (typeof snap.followers !== 'number' && typeof snap.likes !== 'number' && typeof snap.posts !== 'number') return
   await mkdir(analyticsDir(root), { recursive: true })
-  await writeFile(jsonlPath(root, platform), `${JSON.stringify({
+  await appendFile(jsonlPath(root, platform), `${JSON.stringify({
     ts: Math.floor(now / 1000),
     ...(typeof snap.followers === 'number' ? { followers: snap.followers } : {}),
     ...(typeof snap.likes === 'number' ? { likes: snap.likes } : {}),

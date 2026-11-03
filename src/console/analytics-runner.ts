@@ -104,12 +104,12 @@ export class AnalyticsRunners {
   }
   stateOf(platform: LoginPlatform): FetchState { return this.states.get(platform) ?? 'idle' }
   progress(): { done: number; total: number } { return { ...this.batch } }
-  /** Shutdown sweep: kill the live fetch (group kill, escalating) and drop the queued rest (spec §5 边界：丢一次可重拉). */
+  /** Shutdown sweep: kill the live fetch (group kill, escalating like terminate) and drop the queued rest (spec §5 边界：丢一次可重拉). */
   async stop(): Promise<void> {
     this.queued.length = 0
     this.batch = { done: 0, total: 0 }
     const running = this.running
-    if (running !== undefined) { running.handle.kill('SIGTERM'); await this.settle(running.handle) }
+    if (running !== undefined) await this.terminate(running.handle)
   }
   private pump(): void {
     if (this.running !== undefined || this.queued.length === 0) return

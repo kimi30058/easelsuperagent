@@ -219,6 +219,33 @@ describe('AnalyticsRunners queue', () => {
     const xhsLine = (await readFile(jsonlPath(root, 'xiaohongshu'), 'utf8').catch(() => '')).trim()
     expect(JSON.parse(xhsLine)).toMatchObject({ followers: 1, ts: before + 60 })      // account_stats 的 jsonl 落脚本自解析的
   })                                                                                  // 错位根（ADR-0007，无 CLI 覆盖）——执行根的快照归 sidecar
+
+  it('appends — two fetches of one platform leave two jsonl lines (the trend accumulates)', async () => {
+    const before = Math.floor(Date.now() / 1000)
+    const first = manual('{"platform":"douyin","followers":10,"likes":1,"posts":2}')
+    const second = manual('{"platform":"douyin","followers":12,"likes":2,"posts":3}')
+    const order = [first, second]
+    let index = 0
+    const runners = new AnalyticsRunners({ root, scriptsDir: '/skills', now: () => (before + 60) * 1000,
+      spawn: () => order[index++]!.handle })
+    await runners.enqueue('douyin'); await first.exit(0); await settle(30)
+    await runners.enqueue('douyin'); await second.exit(0); await settle(60)
+    const lines = (await readFile(jsonlPath(root, 'douyin'), 'utf8')).trim().split('\n')
+    expect(lines).toHaveLength(2)                                                     // 截断写会只剩一行——趋势累积是本域核心语义
+    expect(JSON.parse(lines[0]!)).toMatchObject({ followers: 10 })
+    expect(JSON.parse(lines[1]!)).toMatchObject({ followers: 12 })
+  })
+
+  it('stop() escalates a hung fetch to SIGKILL (shutdown sweep, login-runner 同款)', async () => {
+    const hung = manual()
+    const runners = new AnalyticsRunners({ root, scriptsDir: '/skills', terminateWindowMs: 10,
+      spawn: () => hung.handle })
+    await runners.enqueue('xiaohongshu')
+    await runners.stop()
+    expect(hung.kills).toContain('SIGTERM')
+    expect(hung.kills).toContain('SIGKILL')
+    await hung.exit(null)
+  })
 })
 
 describe('AnalyticsApi routes', () => {
@@ -258,6 +285,7 @@ describe('AnalyticsApi routes', () => {
   it('aggregates login, state, spark, works and progress over GET /api/analytics', async () => {
     await writeMarker(loginPaths(apiRoot, 'xiaohongshu'), 'success', '已登录')
     await writeLatest(apiRoot, 'xiaohongshu', { followers: 1234, likes: 12300, nickname: '晚风',
+      metrics: [{ label: '曝光数', value: '4.5k', vs: '+8%' }],
       notes: [{ title: '秋天的第一杯奶茶', url: 'https://x/x1', stat: '赞 23' }] })
     await mkdir(join(apiRoot, 'outputs', '_analytics'), { recursive: true })
     await writeFile(jsonlPath(apiRoot, 'xiaohongshu'),
@@ -268,12 +296,13 @@ describe('AnalyticsApi routes', () => {
     ] }), 'utf8')
     const response = await fetch(`${base}/api/analytics`)
     expect(response.status).toBe(200)
-    const json = await response.json() as { platforms: { platform: string; login: boolean; state: string; spark: unknown[] }[]
-      works: { title: string; stat: string }[]; progress: { done: number; total: number } }
+    const json = await response.json() as { platforms: { platform: string; login: boolean; state: string; spark: unknown[]
+      latest?: { metrics?: unknown } }[]; works: { title: string; stat: string }[]; progress: { done: number; total: number } }
     expect(json.platforms.map(view => view.platform)).toEqual(
       ['xiaohongshu', 'bilibili', 'douyin', 'wechat-oa', 'kuaishou', 'weixin-channels', 'zhihu'])
     const xhs = json.platforms[0]!
     expect(xhs.login).toBe(true)
+    expect(xhs.latest!.metrics).toEqual([{ label: '曝光数', value: '4.5k', vs: '+8%' }])   // 近 7 日指标要活着到页面（Critical 2）
     expect(xhs.spark).toEqual([{ ts: 1, followers: 1200 }, { ts: 2, followers: 1234 }])
     expect(json.works).toEqual([{ title: '秋天的第一杯奶茶', platform: 'xiaohongshu', date: '2026-11-01', stat: '赞 23', url: 'https://x/x1' }])
     expect(json.progress).toEqual({ done: 0, total: 0 })
@@ -290,6 +319,7 @@ describe('AnalyticsApi routes', () => {
     expect((await all.json() as { queued: number }).queued).toBe(0)                   // douyin 已在采，其余未登录
     expect(spawned).toBeDefined()
     spawned!.exit(0)                                                                   // 收尾：别把句柄留给 afterEach
+    await settle(60)                                                                   // writeLatest+appendSnapshot 落完再交给 rm
   })
 
   it('404s an unknown platform and 503s while the orchestrator has never named a root', async () => {

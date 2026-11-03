@@ -72,7 +72,8 @@ export class AnalyticsApi {
         login: await loggedInFast(root, PROCESS_KEY_OF(platform)),
         state: runners.stateOf(platform),
         latest: latest === undefined ? undefined
-          : { followers: latest.followers, likes: latest.likes, nickname: latest.nickname, fetchedAt: latest.fetchedAt },
+          : { followers: latest.followers, likes: latest.likes, nickname: latest.nickname, fetchedAt: latest.fetchedAt,
+            metrics: latest.metrics },   // 近 7 日指标要活着到页面（卡内展开消费的就是它）
         spark: await readSpark(root, platform) })
     }
     return { platforms, works: joinWorks(await readCalendarRecords(root), latests), progress: runners.progress() }
