@@ -406,6 +406,10 @@ Some generic modules still refer directly to GitHub or Feishu:
 | `src/console/wechat-credentials.ts` | `WechatCredentials`, the official account's AppID/AppSecret in wechat-publisher.yaml, written through python and verified against the token API |
 | `src/console/accounts-api.ts` | `AccountsApi`, the account domain's `/api/*` routes answered by the sidecar itself, with the execution root self-configured from the settings view |
 | `src/console/accounts.tsx` | The accounts page: a card per platform with whoami names, the login modal's whole scan flow, the SMS and credentials forms, and the logout confirm |
+| `src/console/execution-root.ts` | `ExecutionRoot`, the execution-root resolver both sidecar API domains share: the orchestrator's settings view, cached with a TTL, 503 only while never known |
+| `src/console/publish-protocol.ts` | The publish file protocol: every path and read/write under `outputs/_publish` — douyin's status, the one-shot code and resend sidecars, and the bounded 2KB log tail |
+| `src/console/publish-api.ts` | `PublishApi`, the publish domain's `/api/publish/*` routes the sidecar answers itself: the aggregate read and douyin's SMS wall, which accepts a code only while a publish runs |
+| `src/console/publish.tsx` | The publish center: one card per platform over the file protocol, the SMS wall's inline form, a fresh log while a publish runs, and the latest calendar record otherwise |
 
 `src/sources/feishu.ts` is also the entry of the Feishu Source plugin, built by `tsdown.config.ts` and exported in `package.json` as `./feishu-watch`. The bundle's `cordis.patch.yml` inserts it, disabled by default.
 
@@ -459,6 +463,8 @@ Some generic modules still refer directly to GitHub or Feishu:
 | `tests/console-shell.spec.tsx` | The console shell: the sidebar over the shared views, hash routing in both directions, the offline bar, and English when the browser asks for it |
 | `tests/console-accounts.spec.ts` | The account domain's node side: the _login file protocol, runner lifecycle with pidfile reaping, whoami confidence and write-back, wechat credentials, and the `/api/*` routes with the self-configured root |
 | `tests/console-accounts-view.spec.tsx` | The accounts page: cards with whoami names and the offline state, the login modal's state machine, the SMS wall's inline validation, the logout confirm, and the credentials form |
+| `tests/console-publish.spec.ts` | The publish domain's node side: the _publish file protocol (tolerant status, bounded 2KB tail, aggregate) and the /api/publish routes (codes only while publishing, platform and format validation, resend) |
+| `tests/console-publish-view.spec.tsx` | The publish center: cards with empty states, douyin's SMS form with inline validation, a fresh log as publishing, the latest calendar record by its Chinese name, and the login modal's publish hint |
 | `tests/console-inbox.spec.tsx`, `tests/console-content.spec.tsx` | The console inbox and content pages: the composes with the message id each retry reuses, the badge of console-born Threads, the Threads of other sources read-only, the publish gate's answers by stage, and the calendar, personas and skills |
 | `tests/draft.spec.ts`, `tests/prompt-config.spec.ts`, `tests/markdown.spec.ts`, `tests/marks.spec.ts` | Draft states, merges and the save bar's line; the prompt configuration by section and the line diff; the Markdown subset and its links; the mark of every state the views classify |
 | `tests/locales.spec.ts`, `tests/styles.spec.ts` | The copy in both languages, the stylesheet |
