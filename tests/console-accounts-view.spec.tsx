@@ -5,7 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { zh } from '../src/client/locales.ts'
 import { ConsoleApp } from '../src/console/shell.tsx'
-import { all, settle } from './fixtures/panel.tsx'
+import { all, click, settle, type } from './fixtures/panel.tsx'
 import { usePanelServer } from './fixtures/panel-server.ts'
 
 let root: Root | undefined
@@ -13,14 +13,19 @@ let container: HTMLElement | undefined
 const unmount = () => { act(() => { root?.unmount() }); root = undefined; container?.remove() }
 usePanelServer(unmount)
 
-/** /api/* responses this test serves; everything else falls through to the panel server. */
-let api: Record<string, () => Response> = {}
+/** /api/* responses this test serves (keyed by path, answered per method and body); everything else falls to the panel server. */
+let api: Record<string, (method: string, body?: unknown) => Response> = {}
+let posted: { path: string; body?: unknown }[] = []
 beforeEach(() => {
-  api = {}
+  api = {}; posted = []
   const inner = globalThis.fetch
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit): Promise<Response> => {
     const path = new URL(String(url), 'http://127.0.0.1:3083').pathname
-    if (path.startsWith('/api/')) return api[path]?.() ?? new Response('{"error":"missing"}', { status: 404 })
+    if (path.startsWith('/api/')) {
+      const body = init?.body === undefined ? undefined : JSON.parse(String(init.body))
+      if (init?.method !== undefined && init.method !== 'GET') posted.push({ path, body })
+      return api[path]?.(init?.method ?? 'GET', body) ?? new Response('{"error":"missing"}', { status: 404 })
+    }
     return inner(url, init)
   }))
   localStorage.clear(); location.hash = ''
@@ -40,10 +45,15 @@ const goto = async (hash: string) => {
   await act(async () => { location.hash = hash; await new Promise(resolve => setTimeout(resolve, 0)) })
   await settle()
 }
+/** Real-clock sleep for the modal's one-second status poll, which no act flush advances. */
+const tick = async (ms = 1300): Promise<void> => {
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, ms)) })
+  await settle()
+}
 
 /** All four cards plus whoami answers for each, so the page's background verification settles. */
 function serveCards(cards: { platform: string; name: string; backend: string; loggedIn: boolean }[],
-  whoami: Record<string, { loggedIn: boolean; name: string; avatar: string }>) {
+  whoami: Record<string, { loggedIn: boolean; name: string; avatar: string }> = {}) {
   api['/api/accounts'] = () => reply(cards)
   for (const platform of ['xiaohongshu', 'bilibili', 'douyin', 'wechat-oa'])
     api[`/api/accounts/${platform}/whoami`] = () => reply(whoami[platform] ?? { loggedIn: false, name: '', avatar: '' })
@@ -74,4 +84,87 @@ it('shows the offline-root state when every account call answers 503', async () 
   await mountConsole()
   await goto('#/accounts')
   expect(container!.textContent).toContain(zh['console.offlineRoot'])
+})
+
+/** One card's button by its visible text, scoped to a platform's card. */
+const cardButton = (platform: string, label: string): HTMLButtonElement =>
+  all(`.console-card[data-platform='${platform}'] button`).find(button => button.textContent === label) as HTMLButtonElement
+
+it('runs the login modal through the state machine to success', async () => {
+  serveCards(FOUR_CARDS.map(card => card.platform === 'xiaohongshu' ? card : { ...card, loggedIn: false }))
+  let phase = 'qr'
+  api['/api/login/xiaohongshu'] = () => reply({ state: 'starting', message: '' })
+  api['/api/login/xiaohongshu/status'] = () => reply(phase === 'qr'
+    ? { state: 'qr_ready', message: '', qrTs: 123 } : { state: 'success', message: '' })
+  await mountConsole()
+  await goto('#/accounts')
+  await click(cardButton('xiaohongshu', zh['console.login']))
+  await tick()                                        // 首态 starting，二维码由 1s 轮询带来
+  const image = container!.querySelector('.console-qr img') as HTMLImageElement
+  expect(image.getAttribute('src')).toBe('/api/login/xiaohongshu/qr?ts=123')
+  phase = 'success'
+  await tick()
+  expect(container!.textContent).toContain(zh['console.loginSuccess'])
+}, 9000)
+
+it('submits an sms code through the douyin wall and validates its shape', async () => {
+  serveCards(FOUR_CARDS.map(card => ({ ...card, loggedIn: false })))
+  api['/api/login/douyin'] = () => reply({ state: 'starting', message: '' })
+  api['/api/login/douyin/status'] = () => reply({ state: 'sms_required', message: '' })
+  api['/api/login/douyin/sms'] = () => reply({ ok: true })
+  await mountConsole()
+  await goto('#/accounts')
+  await click(cardButton('douyin', zh['console.login']))
+  await tick()                                        // 首态 starting，短信墙由 1s 轮询带来
+  expect(container!.textContent).toContain(zh['console.smsRequired'])
+  const input = container!.querySelector('.console-modal input') as HTMLInputElement
+  await type(input, '12')
+  await click(container!.querySelector('.console-modal button[type=submit]') as HTMLButtonElement)
+  expect(container!.textContent).toContain(zh['console.smsInvalid'])        // inline 校验挡下，不发请求
+  expect(posted.filter(call => call.path === '/api/login/douyin/sms')).toEqual([])
+  await type(input, '654321')
+  await click(container!.querySelector('.console-modal button[type=submit]') as HTMLButtonElement)
+  expect(posted.filter(call => call.path === '/api/login/douyin/sms').map(call => call.body))
+    .toEqual([{ code: '654321' }])
+}, 9000)
+
+it('asks before logout and calls the endpoint once confirmed', async () => {
+  serveCards(FOUR_CARDS.map(card => card.platform === 'bilibili' ? { ...card, loggedIn: true } : { ...card, loggedIn: false }),
+    { bilibili: { loggedIn: true, name: 'B站昵称', avatar: '' } })
+  api['/api/logout/bilibili'] = () => reply({ ok: true })
+  await mountConsole()
+  await goto('#/accounts')
+  await act(async () => { cardButton('bilibili', zh['console.logout']).click() })
+  await settle()
+  expect(posted.filter(call => call.path === '/api/logout/bilibili')).toEqual([])   // 先确认
+  expect(container!.textContent).toContain(zh['console.logoutConfirm'])
+  await act(async () => {
+    (all('.console-modal button').find(button => button.textContent === zh['confirm']) as HTMLButtonElement).click()
+  })
+  await settle()
+  expect(posted.filter(call => call.path === '/api/logout/bilibili').length).toBe(1)
+})
+
+it('shows and saves the wechat-oa credentials through the form', async () => {
+  serveCards(FOUR_CARDS.map(card => ({ ...card, loggedIn: false })))
+  let credentials = { configured: false, appIdMasked: '', name: '', author: '' }
+  api['/api/accounts/wechat-oa/credentials'] = method => method === 'GET'
+    ? reply(credentials)
+    : reply((credentials = { configured: true, appIdMasked: 'wx1234***90ab', name: '', author: '' }) && { ok: true, message: '公众号凭证已保存并验证通过' })
+  await mountConsole()
+  await goto('#/accounts')
+  expect(container!.textContent).toContain(zh['console.credentials'])
+  expect(container!.textContent).not.toContain('wx1234***90ab')           // 未配置时不显示
+  await act(async () => { cardButton('wechat-oa', zh['console.credentials']).click() })
+  await settle()
+  const appId = container!.querySelector('.console-form input#credential-appid') as HTMLInputElement
+  const secret = container!.querySelector('.console-form input#credential-secret') as HTMLInputElement
+  await type(appId, 'wx1234567890ab')
+  await type(secret, 'sec')
+  await act(async () => { cardButton('wechat-oa', zh['console.saveCredentials']).click() })
+  await settle()
+  expect(posted.filter(call => call.path === '/api/accounts/wechat-oa/credentials').map(call => call.body))
+    .toEqual([{ appId: 'wx1234567890ab', appSecret: 'sec', name: '', author: '' }])
+  expect(container!.textContent).toContain('公众号凭证已保存并验证通过')
+  expect(container!.textContent).toContain('wx1234***90ab')                // 保存后回显脱敏 AppID
 })
