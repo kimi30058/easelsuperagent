@@ -571,6 +571,20 @@ describe('AccountsApi routes', () => {
     } finally { await close() }
   })
 
+  it('logout of a web-family platform removes the artifacts and the profile directory', async () => {
+    const paths = loginPaths(root, 'zhihu')
+    await writeMarker(paths, 'success', 'n')
+    const profile = join(root, '.easel-browser-profiles', 'ZhihuProfile')
+    await mkdir(profile, { recursive: true })
+    const { base, close } = await mounted()
+    try {
+      expect((await post(base, '/api/logout/zhihu')).status).toBe(200)
+      expect((await readStatus(paths)).state).toBe('unknown')
+      const { stat } = await import('node:fs/promises')
+      await expect(stat(profile)).rejects.toThrow()
+    } finally { await close() }
+  })
+
   it('logout of wechat-oa clears both process keys and its credentials', async () => {
     for (const key of ['wechat-oa', 'wechat-oa-mp'] as const) {
       const paths = loginPaths(root, key)
