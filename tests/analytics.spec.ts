@@ -2,12 +2,15 @@
 import { mkdtemp, mkdir, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createServer, type Server } from 'node:http'
 import { expect, it, describe, beforeEach, afterEach } from 'vitest'
+import { ExecutionRoot } from '../src/console/execution-root.ts'
+import { AnalyticsApi } from '../src/console/analytics-api.ts'
 import {
   CALENDAR_NAME, joinWorks, jsonlPath, lastJsonObject, latestPath,
   readCalendarRecords, readLatest, readSpark, writeLatest,
 } from '../src/console/analytics-protocol.ts'
-import { AnalyticsRunners, analyticsCommand, type FetchHandle } from '../src/console/analytics-runner.ts'
+import { AnalyticsRunners, analyticsCommand, ANALYTICS_TIMEOUT_MS, type FetchHandle } from '../src/console/analytics-runner.ts'
 import { loginPaths, writeMarker } from '../src/console/login-protocol.ts'
 
 let root = ''
@@ -145,7 +148,8 @@ describe('AnalyticsRunners queue', () => {
   it('escalates a hung fetch to SIGKILL and the queue moves on (Review Focus 4)', async () => {
     const hung = manual(); const next = manual()
     let spawns = 0
-    const quick = new AnalyticsRunners({ root, scriptsDir: '/skills', timeouts: { xiaohongshu: 20, douyin: 20 },
+    const quick = new AnalyticsRunners({ root, scriptsDir: '/skills',
+      timeouts: { ...ANALYTICS_TIMEOUT_MS, xiaohongshu: 20, douyin: 20 },   // Record 全键型：铺满表再覆写用例键
       terminateWindowMs: 10, spawn: () => { spawns++; return spawns === 1 ? hung.handle : next.handle } })
     await quick.enqueue('xiaohongshu'); await quick.enqueue('douyin')
     await settle(80)                                                                   // 超时 20ms + 升级窗 10ms 内已 kill
@@ -193,5 +197,99 @@ describe('AnalyticsRunners queue', () => {
     await utimes(latestPath(root, 'xiaohongshu'), back, back)
     expect(await runners.catchUp()).toBe(1)
     for (const flight of flights.slice()) await flight.exit(0)                         // 收尾：catchUp 起的航班也落停
+  })
+})
+
+describe('AnalyticsApi routes', () => {
+  let settings: Server; let upstream: string; let server: Server; let base: string
+  let apiRoot: string
+  const manual = (): { handle: FetchHandle; exit: (code: number | null) => void } => {
+    let resolveExit: (code: number | null) => void = () => {}
+    const exited = new Promise<number | null>(code => { resolveExit = code })
+    const handle: FetchHandle = { pid: 8100, exited, stdout: Promise.resolve('{"followers": 42}'), kill: () => undefined }
+    return { handle, exit: resolveExit }
+  }
+  let spawned: { handle: FetchHandle; exit: (code: number | null) => void } | undefined
+
+  beforeEach(async () => {
+    apiRoot = await mkdtemp(join(tmpdir(), 'sp4-api-'))
+    settings = createServer((req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ environment: { root: apiRoot } }))
+    })
+    await new Promise<void>(resolve => settings.listen(0, '127.0.0.1', resolve))
+    upstream = `http://127.0.0.1:${(settings.address() as { port: number }).port}`
+    spawned = undefined
+    const analytics = new AnalyticsApi({ root: new ExecutionRoot({ upstream }), spawn: () => { spawned = manual(); return spawned.handle } })
+    server = createServer((req, res) => {
+      void analytics.handle(req, new URL(req.url ?? '/', 'http://127.0.0.1'), res)
+        .then(claimed => { if (!claimed) { res.writeHead(404); res.end('{}') } })
+    })
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    base = `http://127.0.0.1:${(server.address() as { port: number }).port}`
+  })
+  afterEach(async () => {
+    await new Promise<void>(resolve => server.close(() => resolve()))
+    await new Promise<void>(resolve => settings.close(() => resolve()))
+    await rm(apiRoot, { recursive: true, force: true })
+  })
+
+  it('aggregates login, state, spark, works and progress over GET /api/analytics', async () => {
+    await writeMarker(loginPaths(apiRoot, 'xiaohongshu'), 'success', '已登录')
+    await writeLatest(apiRoot, 'xiaohongshu', { followers: 1234, likes: 12300, nickname: '晚风',
+      notes: [{ title: '秋天的第一杯奶茶', url: 'https://x/x1', stat: '赞 23' }] })
+    await mkdir(join(apiRoot, 'outputs', '_analytics'), { recursive: true })
+    await writeFile(jsonlPath(apiRoot, 'xiaohongshu'),
+      `${JSON.stringify({ ts: 1, followers: 1200 })}\n${JSON.stringify({ ts: 2, followers: 1234 })}\n`, 'utf8')
+    await mkdir(join(apiRoot, 'outputs'), { recursive: true })
+    await writeFile(join(apiRoot, 'outputs', '_schedule.json'), JSON.stringify({ entries: [
+      { platform: '小红书', title: '秋天的第一杯奶茶', date: '2026-11-01', status: 'published', url: 'https://x/x1' },
+    ] }), 'utf8')
+    const response = await fetch(`${base}/api/analytics`)
+    expect(response.status).toBe(200)
+    const json = await response.json() as { platforms: { platform: string; login: boolean; state: string; spark: unknown[] }[]
+      works: { title: string; stat: string }[]; progress: { done: number; total: number } }
+    expect(json.platforms.map(view => view.platform)).toEqual(
+      ['xiaohongshu', 'bilibili', 'douyin', 'wechat-oa', 'kuaishou', 'weixin-channels', 'zhihu'])
+    const xhs = json.platforms[0]!
+    expect(xhs.login).toBe(true)
+    expect(xhs.spark).toEqual([{ ts: 1, followers: 1200 }, { ts: 2, followers: 1234 }])
+    expect(json.works).toEqual([{ title: '秋天的第一杯奶茶', platform: 'xiaohongshu', date: '2026-11-01', stat: '赞 23', url: 'https://x/x1' }])
+    expect(json.progress).toEqual({ done: 0, total: 0 })
+  })
+
+  it('enqueues one platform idempotently and all logged-in platforms over POST', async () => {
+    await writeMarker(loginPaths(apiRoot, 'douyin'), 'success', '已登录')
+    const first = await fetch(`${base}/api/analytics/douyin/fetch`, { method: 'POST' })
+    expect(first.status).toBe(200)
+    const again = await fetch(`${base}/api/analytics/douyin/fetch`, { method: 'POST' })
+    expect(again.status).toBe(200)
+    expect((await again.json() as { queued: number }).queued).toBe(0)                 // 幂等：不重复入队
+    const all = await fetch(`${base}/api/analytics/fetch`, { method: 'POST' })
+    expect((await all.json() as { queued: number }).queued).toBe(0)                   // douyin 已在采，其余未登录
+    expect(spawned).toBeDefined()
+    spawned!.exit(0)                                                                   // 收尾：别把句柄留给 afterEach
+  })
+
+  it('404s an unknown platform and 503s while the orchestrator has never named a root', async () => {
+    const unknown = await fetch(`${base}/api/analytics/nope/fetch`, { method: 'POST' })
+    expect(unknown.status).toBe(404)
+    const dead = createServer((req, res) => { res.destroy() })
+    await new Promise<void>(resolve => dead.listen(0, '127.0.0.1', resolve))
+    const deadUpstream = `http://127.0.0.1:${(dead.address() as { port: number }).port}`
+    const analytics = new AnalyticsApi({ root: new ExecutionRoot({ upstream: deadUpstream }) })
+    const bare = createServer((req, res) => {
+      void analytics.handle(req, new URL(req.url ?? '/', 'http://127.0.0.1'), res)
+        .then(claimed => { if (!claimed) { res.writeHead(404); res.end('{}') } })
+    })
+    await new Promise<void>(resolve => bare.listen(0, '127.0.0.1', resolve))
+    try {
+      const response = await fetch(`http://127.0.0.1:${(bare.address() as { port: number }).port}/api/analytics`)
+      expect(response.status).toBe(503)
+      expect((await response.json() as { error?: string }).error).toContain('编排器')
+    } finally {
+      await new Promise<void>(resolve => bare.close(() => resolve()))
+      await new Promise<void>(resolve => dead.close(() => resolve()))
+    }
   })
 })

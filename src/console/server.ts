@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { AccountsApi } from './accounts-api.ts'
+import { AnalyticsApi } from './analytics-api.ts'
 import { ExecutionRoot } from './execution-root.ts'
 import { PublishApi } from './publish-api.ts'
 import INDEX from './index.html?raw'
@@ -12,7 +13,8 @@ export interface ConsoleServerOptions { port?: number; host?: string; upstream?:
 const MAX_BODY_BYTES = 1024 * 1024
 /** Loopback sidecar serving the console page and proxying the orchestrator API server-side, so the panel's same-origin contract holds unchanged. */
 export class ConsoleServer {
-  private constructor(readonly server: Server, readonly url: string, private readonly accounts: AccountsApi) {}
+  private constructor(readonly server: Server, readonly url: string, private readonly accounts: AccountsApi,
+    private readonly analytics: AnalyticsApi) {}
   static async start(options: ConsoleServerOptions = {}): Promise<ConsoleServer> {
     // The bind host is the loopback constant, never a caller's `options.host`: the console serves one operator on this machine.
     const config: Required<ConsoleServerOptions> = { port: options.port ?? Number(process.env.CONSOLE_PORT ?? 3083), host: '127.0.0.1',
@@ -22,24 +24,28 @@ export class ConsoleServer {
     const root = new ExecutionRoot({ upstream: config.upstream })
     const accounts = new AccountsApi({ upstream: config.upstream, root })
     const publishes = new PublishApi({ root })
+    const analytics = new AnalyticsApi({ root })
     // Requests only arrive after listening replaces `bound` with the resolved port (ephemeral when 0 was requested),
     // which is the port every Host check below compares against.
-    let bound: Bound = { ...config, accounts, publishes }
+    let bound: Bound = { ...config, accounts, publishes, analytics }
     // A request that fails (a client aborting mid-body, an unparseable URL) destroys its socket instead of rejecting
     // an unhandled promise and taking the process down.
     const server = createServer((req, res) => void handle(bound, req, res).catch(() => res.destroy()))
     await new Promise<void>(resolve => server.listen(config.port, config.host, resolve))
     bound = { ...bound, port: (server.address() as { port: number }).port }
-    return new ConsoleServer(server, `http://127.0.0.1:${bound.port}`, accounts)
+    analytics.start()   // 定时兜底采样随服务起（spec §2）；关停走 close() 的 analytics.stop()
+    return new ConsoleServer(server, `http://127.0.0.1:${bound.port}`, accounts, analytics)
   }
   async close(): Promise<void> {
     // The account domain's login runners die with the sidecar, marked expired so the next start is clean.
     await this.accounts.stopAll()
+    // The analytics domain's fetch queue and its timed tick die with the sidecar too (丢一次采集可重拉，spec §5 边界).
+    await this.analytics.stop()
     this.server.closeAllConnections()
     await new Promise<void>(resolve => this.server.close(() => resolve()))
   }
 }
-type Bound = Required<ConsoleServerOptions> & { accounts: AccountsApi; publishes: PublishApi }
+type Bound = Required<ConsoleServerOptions> & { accounts: AccountsApi; publishes: PublishApi; analytics: AnalyticsApi }
 async function handle(config: Bound, req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? '/', 'http://127.0.0.1')
   // The Host check is the sidecar's DNS-rebinding defense, mirroring sameOrigin() in src/app/http.ts: a page whose domain
@@ -57,6 +63,7 @@ async function handle(config: Bound, req: IncomingMessage, res: ServerResponse):
   if (url.pathname.startsWith('/api/')) {
     // The console's own domains live in this sidecar (SP1's shape: SP2+ adds routes here, never proxied); each
     // claims its prefix, and each answers a malformed escape 400 itself, so the order between them carries no weight.
+    if (await config.analytics.handle(req, url, res)) return
     if (await config.publishes.handle(req, url, res)) return
     await config.accounts.handle(req, url, res)
     return

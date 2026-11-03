@@ -411,6 +411,7 @@ Some generic modules still refer directly to GitHub or Feishu:
 | `src/console/publish-api.ts` | `PublishApi`, the publish domain's `/api/publish/*` routes the sidecar answers itself: the aggregate read and douyin's SMS wall, which accepts a code or a resend signal only while a publish runs and answers malformed escapes 400 |
 | `src/console/analytics-protocol.ts` | The analytics file protocol: reads/writes under `outputs/_analytics` (the sidecar-owned latest json, the script-owned jsonl tail), the calendar read, and the published→effect works join (URL exact match, 12-char title prefix fallback) |
 | `src/console/analytics-runner.ts` | `AnalyticsRunners`, the analytics fetch queue: three backend commands with explicit paths (ADR-0007), serial per-platform fetches, timeout with group-kill escalation, idempotent enqueue, batch progress, and the stale catch-up |
+| `src/console/analytics-api.ts` | `AnalyticsApi`, the analytics domain's `/api/analytics*` routes: the aggregate read (login fast path + state + spark + works join + batch progress), the fetch enqueue, and the hourly stale-catch-up tick |
 | `src/console/publish.tsx` | The publish center: one card per platform over the file protocol, the SMS wall's inline form, a fresh bottom-following log while a publish runs, the load-error retry, and the latest calendar record otherwise |
 | `src/console/publish-view.ts` | The `/api/publish` view type and its liveness predicates, read alike by the publish cards and the login modal's soft hint |
 
