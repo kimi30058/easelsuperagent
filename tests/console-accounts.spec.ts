@@ -180,6 +180,21 @@ describe('login commands', () => {
     expect(loginCommand(deps, 'wechat-oa-mp').some(part => part.endsWith('weixin_mp_stats.py'))).toBe(true)
     expect(() => loginCommand(deps, 'wechat-oa')).toThrow()
   })
+
+  it('runs the web_publisher family headless: login-qr with --platform, never sms or proxy flags', () => {
+    const deps = { root, scriptsDir: '/repo/skills/easel/shared/scripts' }
+    for (const key of ['kuaishou', 'weixin-channels', 'zhihu'] as const) {
+      const argv = loginCommand(deps, key)
+      expect(argv.some(part => part.endsWith('web_publisher.py'))).toBe(true)
+      expect(argv).toContain('login-qr')               // login 是有头人工登录，runner 必须用 login-qr
+      expect(argv).toContain('--platform')
+      expect(argv[argv.indexOf('--platform') + 1]).toBe(key)   // key 即 --platform 参数值
+      expect(argv).toContain(join(root, 'outputs', '_login', `${key}.png`))    // ADR-0007 显式传参
+      expect(argv).toContain(join(root, 'outputs', '_login', `${key}.json`))
+      expect(argv).not.toContain('--sms-code-file')    // 三家登录无短信墙，传了 unrecognized-argument（Review Focus 1）
+      expect(argv).not.toContain('--no-proxy')         // 脚本内部 launch 已带 --no-proxy-server
+    }
+  })
 })
 
 describe('LoginRunners lifecycle', () => {
@@ -337,6 +352,15 @@ describe('Whoami', () => {
     expect(first).toEqual({ loggedIn: true, name: '小红书昵称', avatar: '' })
     now += 30_000; await whoami.check('xiaohongshu'); expect(calls).toBe(1)   // 60s 窗口内命中缓存
     now += 31_000; await whoami.check('xiaohongshu'); expect(calls).toBe(2)   // 缺 avatar → 60s 后重抓
+  })
+
+  it('verifies the web_publisher family via whoami --platform', async () => {
+    const cmds: string[][] = []
+    const run: RunCommand = async cmd => { cmds.push(cmd)
+      return { code: 0, stdout: '{"loggedIn": true, "name": "知乎号", "avatar": ""}' } }
+    const whoami = new Whoami({ root, scriptsDir: '/s', runners: runnersOf(), run })
+    await whoami.check('zhihu')
+    expect(cmds[0]!.join(' ')).toContain('web_publisher.py whoami --platform zhihu')
   })
 
   it('force skips the cache and a single flight dedupes concurrent checks', async () => {

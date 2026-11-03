@@ -95,6 +95,8 @@ export class Whoami {
       case 'xiaohongshu': return [py, script('xhs_publish.py'), 'whoami', '--no-proxy']
       case 'douyin': return [py, script('douyin_publish.py'), 'whoami', '--no-proxy']
       case 'bilibili': return [py, script('bili_login.py'), 'whoami', '--cookie', bilibiliCookiePath(this.deps.root)]
+      case 'kuaishou': case 'weixin-channels': case 'zhihu':
+        return [py, script('web_publisher.py'), 'whoami', '--platform', key]
       default: return [py, script('weixin_mp_stats.py'), 'whoami', '--no-proxy']
     }
   }
