@@ -14,10 +14,12 @@ interface CalendarRecord { platform: string; title: string; date: string; status
 /** 卡片标题的显示名（与账号页 PLATFORMS 同名，含「微信公众号」）；日历匹配名在 CALENDAR_NAMES（公众号）。 */
 const DISPLAY_NAMES: Record<string, string> = {
   xiaohongshu: '小红书', bilibili: 'B站', douyin: '抖音', 'wechat-oa': '微信公众号',
+  kuaishou: '快手', 'weixin-channels': '微信视频号', zhihu: '知乎',
 }
 /** 日历按平台中文名存记录（calendar_ops.PLATFORM_NAMES + 公众号手动 record 用名）——与显示名不同，两张表各管各的。 */
 const CALENDAR_NAMES: Record<string, string> = {
   xiaohongshu: '小红书', bilibili: 'B站', douyin: '抖音', 'wechat-oa': '公众号',
+  kuaishou: '快手', 'weixin-channels': '微信视频号', zhihu: '知乎',
 }
 const TERMINAL = ['success', 'error']
 const stateLive = (view: PublishView): boolean => view.state !== 'unknown' && !TERMINAL.includes(view.state)

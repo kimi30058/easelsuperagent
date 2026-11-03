@@ -61,7 +61,7 @@ export interface PlatformPublishView {
   readonly platform: LoginPlatform; readonly state: string; readonly message: string; readonly ts?: number
   readonly logTail: string; readonly logMtime?: number
 }
-/** Aggregate all four platforms' _publish artifacts for GET /api/publish; json/log 缺失时 state 为 unknown、logTail 为空串。 */
+/** Aggregate all seven platforms' _publish artifacts for GET /api/publish; json/log 缺失时 state 为 unknown、logTail 为空串。 */
 export async function aggregatePublish(root: string): Promise<PlatformPublishView[]> {
   return Promise.all(PLATFORMS.map(async ({ platform }) => {
     const paths = publishPaths(root, platform)
