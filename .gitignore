@@ -4,3 +4,5 @@ lib/
 .env
 coverage/
 .easel-runtime/
+skills/easel/builtin/skill-wechat-publisher/wechat-publisher.yaml
+cookies.json
