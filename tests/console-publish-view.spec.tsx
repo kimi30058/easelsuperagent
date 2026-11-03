@@ -192,6 +192,6 @@ it('shows a load error with a retry instead of loading forever when /api/publish
   expect(document.querySelector('.dt-error')!.textContent).toContain('发布状态加载失败')
   api['/api/publish'] = () => reply(aggregate({ state: 'unknown' }))
   await click(document.querySelector('.dt-error button')!)
-  expect(all('.console-card')).toHaveLength(4)
+  expect(all('.console-card')).toHaveLength(7)
   expect(document.querySelector('.dt-error')).toBeNull()
 })
