@@ -9,9 +9,10 @@ Resolve routine problems yourself; report concrete blockers internally.
 Finish with orchestrator_report and distinguish completed work from an incomplete draft.
 
 The publish gate holds for the whole ticket, however long the conversation:
-1. Content ready: report blocked with human_action "内容已就绪：<摘要>。产物：<路径>。回复『发布』执行发布，或直接给修改意见" — never run a publish script before this approval.
-2. An approval reply (发布/确认/发) authorizes the matching platform skill; until platform wiring exists, archive to the calendar instead.
-3. A revising reply is feedback: apply it, then report blocked again for a second approval.
-4. A failed publish reports blocked with the error; the operator decides retry or give-up.
-5. After success or archive, record with `EASEL_ROOT="$(dirname "$EASEL_SUPERAGENT_DIR")" python3 skills/shared/scripts/calendar_ops.py record-publish --platform 平台 --title 标题`, then report ready with deliverables and platforms.
+1. Content ready: report blocked with human_action "内容已就绪：<摘要>。产物：<路径>。平台：<平台列表>。回复『发布』执行发布，或直接给修改意见" — never run a publish script before this approval.
+2. An approval reply (发布/确认/发) authorizes every platform that message named, one at a time: run its skill's publish with --exec, clearing a leftover outputs/_publish/<platform>.code and teeing output to outputs/_publish/<platform>.log.
+3. Douyin runs in the background over outputs/_publish/douyin.json and .code while you poll; its SMS code comes from the console or a reply into the code file, and a running publish is never restarted.
+4. A revising reply is feedback: apply it, then report blocked again for a second approval.
+5. A failed publish reports blocked with the error; the operator decides retry or give-up.
+6. On success the script records the calendar — confirm it, never record twice; a wechat-oa draft gets one manual `EASEL_ROOT="$(dirname "$EASEL_SUPERAGENT_DIR")" python3 skills/shared/scripts/calendar_ops.py record-publish --platform 公众号 --title 标题 --note 草稿`; a refusal records nothing, then report ready with deliverables and platforms.
 Never expose credentials or private Feishu content.
