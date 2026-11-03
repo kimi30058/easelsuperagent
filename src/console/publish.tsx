@@ -23,7 +23,8 @@ const TERMINAL = ['success', 'error']
 const stateLive = (view: PublishView): boolean => view.state !== 'unknown' && !TERMINAL.includes(view.state)
 const logFresh = (view: PublishView): boolean =>
   view.logMtime !== undefined && Date.now() - view.logMtime < 10 * 60_000
-const live = (view: PublishView): boolean => stateLive(view) || logFresh(view)
+/** 日志新鲜度只兜没有状态文件的平台（xhs/bili/wechat）：已知状态（含终态）不被日志启发式压过。 */
+const live = (view: PublishView): boolean => stateLive(view) || (view.state === 'unknown' && logFresh(view))
 
 /** The publish center: live cards while anything runs, the latest record otherwise. */
 export function PublishPage(): JSX.Element {
@@ -50,8 +51,9 @@ export function PublishPage(): JSX.Element {
     return () => { clearInterval(timer) }
   }, [views, load])
   if (views === undefined) return <p className="dt-hint">{t('loading')}</p>
+  // _schedule.json 文件序最旧在前，最近一条要从尾部找。
   const latest = (platform: string): CalendarRecord | undefined =>
-    records?.find(record => record.platform === CALENDAR_NAMES[platform] && record.status === 'published')
+    records && [...records].reverse().find(record => record.platform === CALENDAR_NAMES[platform] && record.status === 'published')
   return <div className="console-cards">
     {views.map(view => <PublishCard key={view.platform} view={view} record={latest(view.platform)} />)}
   </div>
@@ -84,7 +86,7 @@ function PublishCard({ view, record }: { view: PublishView; record?: CalendarRec
   return <div className="console-card" data-platform={view.platform}>
     <div className="console-card-title"><span>{DISPLAY_NAMES[view.platform]}</span>
       <span className="console-state" role="status" aria-atomic="true">
-        {stateLive(view) ? (stateKey !== undefined ? t(stateKey) : view.message || view.state)
+        {view.state !== 'unknown' ? (stateKey !== undefined ? t(stateKey) : view.message || view.state)
           : logFresh(view) ? t('console.publishRunning')
           : record ? `${t('console.publishSuccess')} · ${record.date}` : t('console.publishNone')}
       </span>

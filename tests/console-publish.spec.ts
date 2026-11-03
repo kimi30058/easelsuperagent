@@ -130,4 +130,25 @@ describe('PublishApi routes', () => {
     const unknown = await fetch(`${base}/api/publish/kuaishou`)
     expect(unknown.status).toBe(404)
   })
+
+  it('answers 503 while the orchestrator has never named a root (Minor-8 降级)', async () => {
+    const dead = createServer((req, res) => { res.destroy() })
+    await new Promise<void>(resolve => dead.listen(0, '127.0.0.1', resolve))
+    const deadUpstream = `http://127.0.0.1:${(dead.address() as { port: number }).port}`
+    const publishes = new PublishApi({ root: new ExecutionRoot({ upstream: deadUpstream }) })
+    const server = createServer((req, res) => {
+      void publishes.handle(req, new URL(req.url ?? '/', 'http://127.0.0.1'), res)
+        .then(claimed => { if (!claimed) { res.writeHead(404); res.end('{}') } })
+    })
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    try {
+      const response = await fetch(`http://127.0.0.1:${(server.address() as { port: number }).port}/api/publish`)
+      expect(response.status).toBe(503)
+      const body = await response.json() as { error?: string }
+      expect(body.error).toContain('编排器')
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()))
+      await new Promise<void>(resolve => dead.close(() => resolve()))
+    }
+  })
 })

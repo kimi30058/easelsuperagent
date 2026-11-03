@@ -95,12 +95,49 @@ it('marks a fresh log as publishing with its tail', async () => {
 it('shows the latest calendar record by its Chinese platform name (Review Focus 2)', async () => {
   api['/api/publish'] = () => reply(aggregate({ state: 'unknown' }))
   served.calendar = () => reply({ entries: [
-    { platform: 'B站', title: 'B站视频', date: '2026-11-03', status: 'published' },
+    { platform: 'B站', title: 'B站旧视频', date: '2026-10-01', status: 'published' },
     { platform: '公众号', title: '公众号草稿', date: '2026-11-03', status: 'published' },
+    { platform: 'B站', title: 'B站新视频', date: '2026-11-03', status: 'published' },
   ] })
   await mountConsole(); await goto('#/publish')
-  expect(find('bilibili').textContent).toContain('B站视频')
+  expect(find('bilibili').textContent).toContain('B站新视频')   // 文件序最旧在前，卡片要最近一条
   expect(find('wechat-oa').textContent).toContain('公众号草稿')   // 公众号 ≠ 微信公众号：映射表钉死
+})
+
+it('shows a known terminal state over a fresh log: a failed publish says so (Important-2)', async () => {
+  api['/api/publish'] = () => reply(aggregate({ state: 'error', message: '读回未确认' })
+    .map(view => view.platform === 'douyin'
+      ? { ...view, state: 'error', message: '读回未确认', logTail: '发布失败 traceback', logMtime: Date.now() - 30_000 }
+      : view))
+  await mountConsole(); await goto('#/publish')
+  const card = find('douyin')
+  expect(card.textContent).toContain('发布失败')
+  expect(card.textContent).not.toContain('发布进行中')
+  expect(card.querySelector('.console-publish-log')!.textContent).toContain('traceback')
+})
+
+it('shows a known success over a fresh log instead of "publishing" (Important-2)', async () => {
+  api['/api/publish'] = () => reply(aggregate({ state: 'success' })
+    .map(view => view.platform === 'douyin'
+      ? { ...view, state: 'success', logTail: '✅ 发布成功', logMtime: Date.now() - 30_000 }
+      : view))
+  await mountConsole(); await goto('#/publish')
+  const card = find('douyin')
+  expect(card.textContent).toContain('发布成功')
+  expect(card.textContent).not.toContain('发布进行中')
+})
+
+it('polls only while something is live: one fetch when quiet, more while sms_required (Minor-8 轮询开关)', async () => {
+  let calls = 0
+  api['/api/publish'] = () => { calls++; return reply(aggregate({ state: 'unknown' })) }
+  await mountConsole(); await goto('#/publish')
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 1300)) })   // 全静默：1s 内不再拉
+  expect(calls).toBe(1)
+  let live = 0
+  api['/api/publish'] = () => { live++; return reply(aggregate({ state: 'sms_required' })) }
+  await goto('#/overview'); await goto('#/publish')
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 1300)) })   // 有验证码墙：1s 轮询
+  expect(live).toBeGreaterThan(1)
 })
 
 it('treats a missing calendar as no records instead of an error (Review Focus 3)', async () => {
