@@ -402,7 +402,7 @@ Some generic modules still refer directly to GitHub or Feishu:
 | `src/console/login-protocol.ts` | The platform-login file protocol: the platform table and every path and read/write under `outputs/_login`, all explicit per ADR-0007 |
 | `src/console/python.ts` | `pythonBin`, the interpreter the account domain's scripts run on: `EASEL_PYTHON`, then the project venv beside the skill library (`requirements.txt`), then bare python3 |
 | `src/console/login-runner.ts` | `LoginRunners`, the login runners of one sidecar: spawn with every path explicit, pidfile reaping of orphans, per-key serialization, cancel and the shutdown sweep |
-| `src/console/whoami.ts` | `Whoami`, true login verification over the skills' own whoami subcommands: single-flight with a TTL cache, confident-or-502, and the success marker write-back |
+| `src/console/whoami.ts` | `Whoami`, true login verification over the skills' own whoami subcommands: single-flight with a TTL cache, confident-or-502, the success marker write-back, and the kuaishou publish-auth probe's folded `loggedIn:false` (`reason:"publish_auth_expired"`) read as 502 so the marker survives |
 | `src/console/wechat-credentials.ts` | `WechatCredentials`, the official account's AppID/AppSecret in wechat-publisher.yaml, written through python and verified against the token API |
 | `src/console/accounts-api.ts` | `AccountsApi`, the account domain's `/api/*` routes answered by the sidecar itself, with the execution root self-configured from the settings view |
 | `src/console/accounts.tsx` | The accounts page: a card per platform with whoami names, the login modal's whole scan flow, the SMS form and the credentials modal, and the logout confirm |

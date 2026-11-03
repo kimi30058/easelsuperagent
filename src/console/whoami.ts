@@ -76,6 +76,10 @@ export class Whoami {
     try { finished = await this.deps.run(this.command(key), { cwd: this.deps.root, timeoutMs: TIMEOUT_MS[key] }) }
     catch { throw new AccountError(504, '校验超时（浏览器起不来或网络慢）') }
     const parsed = lastJson(finished.stdout)
+    // 快手 login_probe 探针把「外壳登录仍在、发布鉴权失效」折叠成 loggedIn:false + reason（web_publisher.py whoami），
+    // 且探针对瞬时风控 403 亦会误报，两次校验间可摇摆——按 not-confident 处理：不删登录标记（止振），提示重新登录。
+    if (parsed?.reason === 'publish_auth_expired')
+      throw new AccountError(502, '发布鉴权探针未通过（登录外壳仍在，多为发布 token 过期或瞬时风控）；请重新扫码登录以刷新发布授权')
     const confident = parsed !== undefined && finished.code === 0 && typeof parsed.loggedIn === 'boolean' && parsed.error === undefined
     if (!confident) throw new AccountError(502, '未能确认当前账号身份，请稍后重试校验；原登录状态和账号资料保持不变')
     const value: WhoamiResult = { loggedIn: parsed.loggedIn === true,
@@ -104,7 +108,7 @@ export class Whoami {
 /** A logged-in entry missing its name or avatar refreshes sooner, so the card fills in by itself. */
 const ttlFor = (value: WhoamiResult): number =>
   value.loggedIn && (!value.name || !value.avatar) ? 60_000 : TTL_MS
-type JsonLine = { loggedIn?: unknown; name?: unknown; avatar?: unknown; error?: unknown }
+type JsonLine = { loggedIn?: unknown; name?: unknown; avatar?: unknown; error?: unknown; reason?: unknown }
 const lastJson = (stdout: string): JsonLine | undefined => {
   for (const line of [...stdout.split('\n')].reverse()) {
     const trimmed = line.trim()

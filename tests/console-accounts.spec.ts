@@ -412,6 +412,17 @@ describe('Whoami', () => {
     expect(await loggedInFast(root, 'xiaohongshu')).toBe(false)
   })
 
+  it('treats kuaishou publish_auth_expired as 502 guidance, never a marker delete (oscillation)', async () => {
+    // 快手 login_probe 探针把「外壳登录仍在、发布鉴权失效」折叠成 loggedIn:false + reason（web_publisher.py whoami），
+    // 且探针对瞬时风控 403 亦会误报——若当确信未登录删标记，卡片就会在已登录↔未登录间摇摆。
+    await writeMarker(loginPaths(root, 'kuaishou'), 'success', '快手号')
+    const run: RunCommand = async () => ({ code: 0,
+      stdout: '{"loggedIn": false, "name": "快手号", "avatar": "a", "publishAuth": "expired", "reason": "publish_auth_expired"}' })
+    const whoami = new Whoami({ root, scriptsDir: '/s', runners: runnersOf(), run })
+    await expect(whoami.check('kuaishou')).rejects.toMatchObject({ status: 502 })
+    expect(await loggedInFast(root, 'kuaishou')).toBe(true)   // 标记不删——卡片保持已登录
+  })
+
   it('maps a timeout to 504 and lets wechat-oa fall back to credentials when the mp session is absent', async () => {
     const timeout: RunCommand = async () => { throw new Error('timed out') }
     const whoami = new Whoami({ root, scriptsDir: '/s', runners: runnersOf(), run: timeout })
