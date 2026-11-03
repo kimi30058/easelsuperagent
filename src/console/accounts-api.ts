@@ -159,6 +159,6 @@ const reply = (res: ServerResponse, status: number, body: unknown): void => {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' })
   res.end(JSON.stringify(body))
 }
-/** The skills' shared scripts live in the repo beside the built lib directory running this sidecar. */
-const defaultScriptsDir = (): string =>
-  join(fileURLToPath(new URL('..', import.meta.url)), 'skills', 'easel', 'shared', 'scripts')
+/** The skills' shared scripts: EASEL_SKILLS_DIR overrides the repo-relative default (non-standard installs). */
+export const defaultScriptsDir = (): string =>
+  process.env.EASEL_SKILLS_DIR ?? join(fileURLToPath(new URL('..', import.meta.url)), 'skills', 'easel', 'shared', 'scripts')

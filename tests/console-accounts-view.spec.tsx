@@ -15,7 +15,7 @@ usePanelServer(unmount)
 
 /** /api/* responses this test serves (keyed by path, answered per method and body); everything else falls to the panel server. */
 let api: Record<string, (method: string, body?: unknown) => Response> = {}
-let posted: { path: string; body?: unknown }[] = []
+let posted: { path: string; method: string; body?: unknown }[] = []
 beforeEach(() => {
   api = {}; posted = []
   const inner = globalThis.fetch
@@ -23,8 +23,9 @@ beforeEach(() => {
     const path = new URL(String(url), 'http://127.0.0.1:3083').pathname
     if (path.startsWith('/api/')) {
       const body = init?.body === undefined ? undefined : JSON.parse(String(init.body))
-      if (init?.method !== undefined && init.method !== 'GET') posted.push({ path, body })
-      return api[path]?.(init?.method ?? 'GET', body) ?? new Response('{"error":"missing"}', { status: 404 })
+      const method = init?.method ?? 'GET'
+      if (method !== 'GET') posted.push({ path, method, body })
+      return api[path]?.(method, body) ?? new Response('{"error":"missing"}', { status: 404 })
     }
     return inner(url, init)
   }))
@@ -167,4 +168,52 @@ it('shows and saves the wechat-oa credentials through the form', async () => {
     .toEqual([{ appId: 'wx1234567890ab', appSecret: 'sec', name: '', author: '' }])
   expect(container!.textContent).toContain('公众号凭证已保存并验证通过')
   expect(container!.textContent).toContain('wx1234***90ab')                // 保存后回显脱敏 AppID
+})
+
+it('closes itself after success without cancelling the finished login', async () => {
+  serveCards(FOUR_CARDS.map(card => ({ ...card, loggedIn: false })))
+  let phase = 'qr'
+  api['/api/login/bilibili'] = () => reply({ state: 'starting', message: '' })
+  api['/api/login/bilibili/status'] = () => reply(phase === 'qr'
+    ? { state: 'qr_ready', message: '', qrTs: 9 } : { state: 'success', message: '' })
+  await mountConsole()
+  await goto('#/accounts')
+  await click(cardButton('bilibili', zh['console.login']))
+  await tick()
+  phase = 'success'
+  await tick()                                        // success 到达（约 1s 轮询）
+  await tick(1500)                                    // 900ms 自动关闭定时器走完
+  expect(container!.querySelector('.console-modal')).toBeNull()
+  expect(posted.filter(call => call.path === '/api/login/bilibili').map(call => call.method)).toEqual(['POST'])   // 只有开启的 POST，绝无取消
+}, 12000)
+
+it('offers verify to force a fresh whoami check past the cache', async () => {
+  serveCards(FOUR_CARDS, { xiaohongshu: { loggedIn: true, name: '旧名字', avatar: '' } })
+  let checks = 0
+  api['/api/accounts/xiaohongshu/whoami'] = () => {
+    checks++
+    return reply(checks === 1 ? { loggedIn: true, name: '旧名字', avatar: '' }
+      : { loggedIn: true, name: '新名字', avatar: '' })
+  }
+  await mountConsole()
+  await goto('#/accounts')
+  expect(container!.textContent).toContain('旧名字')
+  await click(cardButton('xiaohongshu', zh['console.verify']))
+  await settle()
+  expect(container!.textContent).toContain('新名字')
+})
+
+it('closes on Escape during an active login, cancelling it', async () => {
+  serveCards(FOUR_CARDS.map(card => ({ ...card, loggedIn: false })))
+  api['/api/login/douyin'] = () => reply({ state: 'starting', message: '' })
+  api['/api/login/douyin/status'] = () => reply({ state: 'starting', message: '' })
+  await mountConsole()
+  await goto('#/accounts')
+  await click(cardButton('douyin', zh['console.login']))
+  await settle()
+  expect(container!.querySelector('.console-modal')).not.toBeNull()
+  await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })) })
+  await settle()
+  expect(container!.querySelector('.console-modal')).toBeNull()
+  expect(posted.filter(call => call.path === '/api/login/douyin').map(call => call.method)).toEqual(['POST', 'DELETE'])
 })

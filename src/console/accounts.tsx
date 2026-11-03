@@ -1,6 +1,7 @@
 /** The accounts page: one card per platform with live state and whoami names, plus the login modal and its forms. */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePanel } from '../client/provider.tsx'
+import type { T } from '../client/text.ts'
 
 export interface AccountCard { platform: string; name: string; backend: string; note: string; loggedIn: boolean }
 export interface WhoamiView { loggedIn: boolean; name: string; avatar: string }
@@ -32,6 +33,10 @@ const STATE_TEXT: Record<string, 'console.loginStarting' | 'console.qrWaiting' |
   starting: 'console.loginStarting', qr_ready: 'console.qrWaiting', window_login: 'console.qrWaiting',
   scanned: 'console.scanned', sms_required: 'console.smsRequired', verifying: 'console.verifying',
   success: 'console.loginSuccess', expired: 'console.qrExpired',
+}
+const stateText = (t: T, state: string): string => {
+  const key = STATE_TEXT[state]
+  return key === undefined ? state : t(key)
 }
 
 /** The accounts page: cards with the fast-path state, healed in the background by whoami verification. */
@@ -68,15 +73,26 @@ export function AccountsPage(): JSX.Element {
     await accountsFetch(`/logout/${platform}`, { method: 'POST' }).catch(() => undefined)
     await load()
   }, [load])
+  const verify = useCallback(async (platform: string) => {
+    try {
+      const result = await accountsFetch<WhoamiView>(`/accounts/${platform}/whoami?force=1`)
+      setWhoami(previous => {
+        const next = { ...previous, [platform]: result }
+        writeWhoamiCache(next)
+        return next
+      })
+    } catch { /* 502/504：状态保持不变（spec §7） */ }
+  }, [])
+  const closeLogin = useCallback((): void => { setLoginFor(undefined); void load() }, [load])
   if (offline) return <p className="dt-error" role="alert">{t('console.offlineRoot')}</p>
   if (cards === undefined) return <p className="dt-hint">{t('loading')}</p>
   return <div className="console-cards">
     {cards.map(card => <AccountCardView key={card.platform} card={card} whoami={whoami[card.platform]}
       onLogin={card.backend === 'wechat-oa' ? () => setLoginFor({ key: 'wechat-oa-mp', name: t('console.mpSession') })
         : () => setLoginFor({ key: card.platform, name: card.name })}
+      onVerify={() => { void verify(card.platform) }}
       onLogout={() => setConfirmLogout(card.platform)} />)}
-    {loginFor !== undefined && <LoginModal platform={loginFor.key} name={loginFor.name}
-      onClose={() => { setLoginFor(undefined); void load() }} />}
+    {loginFor !== undefined && <LoginModal platform={loginFor.key} name={loginFor.name} onClose={closeLogin} />}
     {confirmLogout !== undefined && <div className="console-modal" role="dialog" aria-modal="true">
       <div className="console-modal-card">
         <p>{t('console.logoutConfirm')}</p>
@@ -90,8 +106,8 @@ export function AccountsPage(): JSX.Element {
 }
 
 /** One platform's card: state badge (announced atomically), the whoami name, and its actions. */
-function AccountCardView({ card, whoami, onLogin, onLogout }: {
-  card: AccountCard; whoami?: WhoamiView; onLogin(): void; onLogout(): void
+function AccountCardView({ card, whoami, onLogin, onVerify, onLogout }: {
+  card: AccountCard; whoami?: WhoamiView; onLogin(): void; onVerify(): void; onLogout(): void
 }): JSX.Element {
   const { t } = usePanel()
   // whoami 真校验先于 fast path 显示（Easel 语义：真值覆盖可能过期的标记）；未返回前显示 fast path。
@@ -107,6 +123,7 @@ function AccountCardView({ card, whoami, onLogin, onLogout }: {
       {!loggedIn && <button type="button" onClick={onLogin}>
         {card.backend === 'wechat-oa' ? t('console.mpLogin') : t('console.login')}
       </button>}
+      {loggedIn && <button type="button" onClick={onVerify}>{t('console.verify')}</button>}
       {loggedIn && <button type="button" onClick={onLogout}>{t('console.logout')}</button>}
     </div>
   </div>
@@ -150,30 +167,42 @@ function CredentialsRow(): JSX.Element {
   </>
 }
 
-/** The login modal: the whole scan flow of one platform, polled once a second; closing it cancels the login. */
+/** The login modal: the whole scan flow of one platform, polled once a second. Esc, backdrop, or the close button
+ *  cancel an in-flight login; a finished one (success/expired/error) closes without touching its terminal state. */
 function LoginModal({ platform, name, onClose }: { platform: string; name: string; onClose(): void }): JSX.Element {
   const { t } = usePanel()
   const [status, setStatus] = useState<LoginStatusView>({ state: 'starting', message: '' })
   const [sms, setSms] = useState('')
   const [smsError, setSmsError] = useState('')
   const [busy, setBusy] = useState(false)
+  const terminal = status.state === 'success' || status.state === 'expired' || status.state === 'error'
   useEffect(() => {
     void accountsFetch<LoginStatusView>(`/login/${platform}`, { method: 'POST' })
       .then(setStatus).catch(error => setStatus({ state: 'error', message: error.message }))
   }, [platform])
   useEffect(() => {
-    const terminal = status.state === 'success' || status.state === 'expired' || status.state === 'error'
     if (terminal) return
     const timer = setInterval(() => {
       void accountsFetch<LoginStatusView>(`/login/${platform}/status`).then(setStatus).catch(() => undefined)
     }, 1000)
     return () => clearInterval(timer)
-  }, [platform, status.state])
-  const close = (): void => {
-    // 关闭即取消：终止 runner（服务端对无进行中的登录幂等处理）。
-    void accountsFetch(`/login/${platform}`, { method: 'DELETE' }).catch(() => undefined)
+  }, [platform, terminal, status.state])
+  // 登录成功后自动收起：让卡片自己接棒显示，不需要人手点关闭（spec §6）。
+  useEffect(() => {
+    if (status.state !== 'success') return
+    const timer = setTimeout(onClose, 900)
+    return () => clearTimeout(timer)
+  }, [status.state, onClose])
+  const close = useCallback((): void => {
+    // 仅进行中的登录被取消；终态关闭不改写服务端的 success/过期记录（迟到的取消是 noop）。
+    if (!terminal) void accountsFetch(`/login/${platform}`, { method: 'DELETE' }).catch(() => undefined)
     onClose()
-  }
+  }, [platform, terminal, onClose])
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => { if (event.key === 'Escape') close() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [close])
   const submitSms = (): void => {
     if (!/^\d{4,8}$/.test(sms.trim())) { setSmsError(t('console.smsInvalid')); return }
     setSmsError(''); setBusy(true)
@@ -185,11 +214,12 @@ function LoginModal({ platform, name, onClose }: { platform: string; name: strin
     void accountsFetch<LoginStatusView>(`/login/${platform}?restart=1`, { method: 'POST' })
       .then(setStatus).catch(error => setStatus({ state: 'error', message: error.message }))
   }
-  return <div className="console-modal" role="dialog" aria-modal="true" aria-label={`${t('console.login')} ${name}`}>
-    <div className="console-modal-card">
+  return <div className="console-modal" role="dialog" aria-modal="true" aria-label={`${t('console.login')} ${name}`}
+    onClick={close}>
+    <div className="console-modal-card" onClick={event => event.stopPropagation()}>
       <h2>{name}</h2>
       <p className="console-card-note" role="status" aria-atomic="true">
-        {status.message || (STATE_TEXT[status.state] !== undefined ? t(STATE_TEXT[status.state]) : status.state)}
+        {status.message || stateText(t, status.state)}
       </p>
       {(status.state === 'qr_ready' || status.state === 'window_login') && status.qrTs !== undefined &&
         <div className="console-qr">

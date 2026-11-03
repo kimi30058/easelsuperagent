@@ -54,11 +54,13 @@ export class WechatCredentials {
   /** Store AppID/AppSecret (validating presence), then verify against the real token endpoint; stored even when verification fails. */
   async save(appId: string, appSecret: string, name: string, author: string): Promise<{ ok: boolean; message: string }> {
     if (!appId.trim() || !appSecret.trim()) throw new AccountError(400, 'AppID 和 AppSecret 都不能为空')
-    await this.deps.run(['python3', '-c', WRITE_PY, this.deps.yamlPath, appId.trim(), appSecret.trim(), name.trim(), author.trim()],
+    const written = await this.deps.run(['python3', '-c', WRITE_PY, this.deps.yamlPath, appId.trim(), appSecret.trim(), name.trim(), author.trim()],
       { cwd: '/', timeoutMs: 15_000 })
+    if (written.code !== 0) throw new AccountError(503, `凭证写入失败（python3 或 pyyaml 不可用，退出码 ${written.code}）`)
     const verification = await this.deps.run(['python3', '-c', VERIFY_PY, appId.trim(), appSecret.trim()],
       { cwd: '/', timeoutMs: 30_000 })
-    const parsed = JSON.parse(lastLine(verification.stdout)) as { ok: boolean; message: string }
+    const parsed = parseJsonLine(verification.stdout)
+    if (parsed === undefined) return { ok: false, message: '凭证已保存，但验证未能执行（python3 或网络不可用）' }
     return parsed.ok ? { ok: true, message: '公众号凭证已保存并验证通过' }
       : { ok: false, message: `凭证已保存但验证未通过：${parsed.message}。若是 40164 请把服务器出口 IP 加入公众号 IP 白名单。` }
   }
@@ -66,9 +68,19 @@ export class WechatCredentials {
   async clear(): Promise<void> {
     await this.deps.run(['python3', '-c', CLEAR_PY, this.deps.yamlPath], { cwd: '/', timeoutMs: 15_000 }).catch(() => undefined)
   }
+  /** The stored account; a read that cannot run or parse degrades to empty — the card shows "not configured", not an outage. */
   private async read(): Promise<StoredAccount> {
-    const finished = await this.deps.run(['python3', '-c', READ_PY, this.deps.yamlPath], { cwd: '/', timeoutMs: 15_000 })
-    return JSON.parse(lastLine(finished.stdout)) as StoredAccount
+    try {
+      const finished = await this.deps.run(['python3', '-c', READ_PY, this.deps.yamlPath], { cwd: '/', timeoutMs: 15_000 })
+      const parsed = parseJsonLine(finished.stdout)
+      return parsed === undefined ? EMPTY_ACCOUNT : parsed as StoredAccount
+    } catch { return EMPTY_ACCOUNT }
   }
+}
+const EMPTY_ACCOUNT: StoredAccount = { app_id: '', app_secret: '', name: '', author: '' }
+const parseJsonLine = (stdout: string): { ok?: boolean; message?: string } | undefined => {
+  const line = lastLine(stdout)
+  if (line === '') return undefined
+  try { return JSON.parse(line) as { ok?: boolean; message?: string } } catch { return undefined }
 }
 const lastLine = (stdout: string): string => [...stdout.split('\n')].reverse().find(line => line.trim()) ?? ''

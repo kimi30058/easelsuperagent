@@ -109,11 +109,13 @@ describe('sms codes, markers, and the fast path', () => {
 })
 
 /** A fake handle whose exit promise the test settles by hand (kill() settles it as a terminate). */
-interface FakeHandle extends RunnerHandle { finish(code: number | null): void }
+interface FakeHandle extends RunnerHandle { finish(code: number | null): void; signals: string[] }
 const fakeHandle = (pid: number): FakeHandle => {
   let settle: (code: number | null) => void = () => undefined
   const exited = new Promise<number | null>(resolve => { settle = resolve })
-  return { pid, exited, kill: () => settle(null), finish: code => settle(code) }
+  const handle: FakeHandle = { pid, exited, signals: [], finish: code => settle(code),
+    kill: (signal?: string) => { handle.signals.push(signal ?? 'SIGTERM'); if (signal !== 'SIGKILL') return; settle(null) } }
+  return handle
 }
 /** A fake spawn that records commands and hands out handles the test moves; it asserts the utf-8 env itself. */
 function fakeSpawn(): { spawnLogin: SpawnLogin; commands: string[][]; handles: FakeHandle[] } {
@@ -164,11 +166,12 @@ describe('LoginRunners lifecycle', () => {
 
   it('restart terminates the in-flight runner and spawns a fresh one', async () => {
     const fake = fakeSpawn()
-    const runners = new LoginRunners({ root, scriptsDir: '/s', spawnLogin: fake.spawnLogin })
+    const runners = new LoginRunners({ root, scriptsDir: '/s', spawnLogin: fake.spawnLogin, terminateWindowMs: 60 })
     await runners.start('xiaohongshu')
     await runners.start('xiaohongshu', true)
     expect(fake.commands.length).toBe(2)
-    expect(fake.handles[0]!.exited).resolves.toBeNull()  // 第一个被 terminate
+    expect(fake.handles[0]!.exited).resolves.toBeNull()  // 第一个被 terminate（SIGTERM 不倒则 SIGKILL）
+    expect(fake.handles[0]!.signals).toEqual(['SIGTERM', 'SIGKILL'])
   })
 
   it('reaps a live orphan from the pidfile instead of spawning a second browser, and kills a dead one', async () => {
@@ -194,7 +197,7 @@ describe('LoginRunners lifecycle', () => {
 
   it('cancel terminates and marks expired; stopAll clears every runner for shutdown', async () => {
     const fake = fakeSpawn()
-    const runners = new LoginRunners({ root, scriptsDir: '/s', spawnLogin: fake.spawnLogin })
+    const runners = new LoginRunners({ root, scriptsDir: '/s', spawnLogin: fake.spawnLogin, terminateWindowMs: 60 })
     await runners.start('douyin')
     await runners.cancel('douyin')
     expect((await runners.status('douyin')).state).toBe('expired')
@@ -231,6 +234,47 @@ describe('LoginRunners lifecycle', () => {
     fake.handles[0]!.finish(0)
     expect(await checking).toEqual({ loggedIn: true, name: '', avatar: '' })
     expect(ran).toBe(true)
+  })
+})
+
+describe('review fixes: real spawn path, cancel guard, kill escalation', () => {
+  it('starts a real (non-injected) login on a fresh root: the _login dir exists before the runner opens its log', async () => {
+    const scripts = await mkdtemp(join(tmpdir(), 'sp2-real-'))
+    // 一个真的 python 假脚本：吃下与真实登录相同的显式参数并写出状态文件——覆盖生产 spawn 顺序。
+    await writeFile(join(scripts, 'xhs_publish.py'), [
+      'import json, sys',
+      'args = sys.argv[1:]',
+      'open(args[args.index("--status-file") + 1], "w").write(json.dumps({"state": "starting", "message": ""}))',
+      'open(args[args.index("--qr-out") + 1], "wb").write(b"\\x89PNG")',
+      '',
+    ].join('\n'), 'utf8')
+    const runners = new LoginRunners({ root, scriptsDir: scripts })
+    try {
+      const status = await runners.start('xiaohongshu')
+      expect(status.state).toBe('starting')              // 真脚本写的状态文件被读回
+      const paths = loginPaths(root, 'xiaohongshu')
+      expect((await readFile(paths.pid, 'utf8')).trim()).toMatch(/^\d+$/)
+    } finally { await runners.stopAll() }
+  })
+
+  it('cancel leaves a finished success login intact — no live runner, no live pid', async () => {
+    const fake = fakeSpawn()
+    const runners = new LoginRunners({ root, scriptsDir: '/s', spawnLogin: fake.spawnLogin })
+    await runners.start('xiaohongshu')
+    fake.handles[0]!.finish(0)                           // runner 正常退出
+    await writeMarker(loginPaths(root, 'xiaohongshu'), 'success', '昵称')
+    await runners.cancel('xiaohongshu')                  // 迟到的取消不得改写
+    expect((await runners.status('xiaohongshu')).state).toBe('success')
+  })
+
+  it('escalates to SIGKILL on the process group when the terminate does not land in the window', async () => {
+    const handle = fakeHandle(1)                         // SIGTERM 打不倒：只有 SIGKILL 结束它
+    const spawnLogin: SpawnLogin = () => handle
+    const runners = new LoginRunners({ root, scriptsDir: '/s', spawnLogin, terminateWindowMs: 60 })
+    await runners.start('douyin')
+    await runners.cancel('douyin')
+    expect(handle.signals).toEqual(['SIGTERM', 'SIGKILL'])
+    expect((await runners.status('douyin')).state).toBe('expired')
   })
 })
 
@@ -327,6 +371,20 @@ describe('WechatCredentials', () => {
     const creds = new WechatCredentials({ scriptsDir: '/s', run: runFrom({}) })
     await expect(creds.save('', 'x', '', '')).rejects.toMatchObject({ status: 400 })
     await expect(creds.save('x', '', '', '')).rejects.toMatchObject({ status: 400 })
+  })
+
+  it('reads as unconfigured when python cannot answer the credentials read (missing or broken)', async () => {
+    const run: RunCommand = async () => ({ code: 1, stdout: '' })   // 例：python3 缺失（ENOENT）
+    const creds = new WechatCredentials({ scriptsDir: '/s', run })
+    expect(await creds.get()).toEqual({ configured: false, appIdMasked: '', name: '', author: '' })
+  })
+})
+
+describe('review fixes: scripts dir override', () => {
+  it('honors EASEL_SKILLS_DIR over the repo-relative default', async () => {
+    const { defaultScriptsDir } = await import('../src/console/accounts-api.ts')
+    process.env.EASEL_SKILLS_DIR = '/custom/skills'
+    try { expect(defaultScriptsDir()).toBe('/custom/skills') } finally { delete process.env.EASEL_SKILLS_DIR }
   })
 })
 
