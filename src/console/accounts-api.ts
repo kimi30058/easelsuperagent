@@ -11,6 +11,7 @@ import {
 import { AccountError, LoginRunners, type SpawnLogin } from './login-runner.ts'
 import { Whoami, type RunCommand } from './whoami.ts'
 import { WechatCredentials } from './wechat-credentials.ts'
+import { ExecutionRoot } from './execution-root.ts'
 
 /** Read one JSON request body, refusing anything over 64KB — these forms are a handful of fields. */
 export async function readBody(req: IncomingMessage): Promise<unknown> {
@@ -23,23 +24,19 @@ export async function readBody(req: IncomingMessage): Promise<unknown> {
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') } catch { throw new AccountError(400, '请求体不是合法 JSON') }
 }
 
-/** How stale the cached execution root may be before one request re-reads the orchestrator's settings view:
- *  a workspace migration is picked up within this window, without restarting the sidecar. */
-const ROOT_REFRESH_MS = 30_000
-
 /** The sidecar's account routes: everything under /api/*, answered in place (never proxied). */
 export class AccountsApi {
   private readonly deps: { upstream: string; scriptsDir: string; home: string; spawnLogin?: SpawnLogin; run?: RunCommand; now: () => number }
-  private root?: string
-  private rootRefreshedAt = 0
+  private readonly resolver: ExecutionRoot
   private domainRoot?: string
   private runners?: LoginRunners
   private whoami?: Whoami
   private credentials?: WechatCredentials
-  constructor(deps?: { upstream?: string; scriptsDir?: string; spawnLogin?: SpawnLogin; run?: RunCommand; home?: string; now?: () => number }) {
+  constructor(deps?: { upstream?: string; scriptsDir?: string; spawnLogin?: SpawnLogin; run?: RunCommand; home?: string; now?: () => number; root?: ExecutionRoot }) {
     this.deps = { upstream: deps?.upstream ?? process.env.EASEL_SUPERAGENT_URL ?? 'http://127.0.0.1:3082',
       scriptsDir: deps?.scriptsDir ?? defaultScriptsDir(), home: deps?.home ?? homedir(),
       spawnLogin: deps?.spawnLogin, run: deps?.run, now: deps?.now ?? (() => Date.now()) }
+    this.resolver = deps?.root ?? new ExecutionRoot({ upstream: this.deps.upstream, now: this.deps.now })
   }
   /** Claim and answer one request when it falls under /api/*; false lets the caller carry on. */
   async handle(req: IncomingMessage, url: URL, res: ServerResponse): Promise<boolean> {
@@ -130,36 +127,9 @@ export class AccountsApi {
     if (platform === 'bilibili') await rm(bilibiliCookiePath(root), { force: true })
     if (platform === 'wechat-oa') await credentials.clear()
   }
-  /** The execution root from the orchestrator's settings view, cached no longer than ROOT_REFRESH_MS; 503 only
-   *  while it has never been known — a failed refresh keeps serving the stale root instead of failing the panel. */
+  /** The execution root via the shared resolver; 503 until it is first known, then cached with a TTL. */
   private async executionRoot(): Promise<string> {
-    if (this.root !== undefined && this.deps.now() - this.rootRefreshedAt < ROOT_REFRESH_MS) return this.root
-    try {
-      const root = await this.readSettingsRoot()
-      this.root = root
-      this.rootRefreshedAt = this.deps.now()
-      return root
-    } catch (error) {
-      // TTL 到点后的刷新失败不是断供：旧根继续服务；503 只属于从未拿到过根的 sidecar。
-      // 失败也记时刻——否则编排器假死时每个请求都重挂一次 4s 的拉取（登录轮询 1s 一发，会堆积）。
-      if (this.root === undefined) throw error
-      this.rootRefreshedAt = this.deps.now()
-      return this.root
-    }
-  }
-  /** One settings read; throws the 503 with its own words when the orchestrator is unreachable or the root is missing. */
-  private async readSettingsRoot(): Promise<string> {
-    let settings: { environment?: { root?: unknown } }
-    try {
-      // The sidecar header the orchestrator's sameOrigin() check demands, as the proxied paths send it (server.ts).
-      const response = await fetch(`${this.deps.upstream}/orchestrator/api/settings`,
-        { headers: { 'x-orchestrator-request': '1' }, signal: AbortSignal.timeout(4000) })
-      if (!response.ok) throw new Error(`settings ${response.status}`)
-      settings = await response.json() as typeof settings
-    } catch { throw new AccountError(503, '编排器不可达，无法定位工作根目录') }
-    const root = settings.environment?.root
-    if (typeof root !== 'string' || !root) throw new AccountError(503, '编排器设置缺少工作根目录')
-    return root
+    return await this.resolver.get()
   }
   /** Build (once per root) and share the domain objects a request needs; a root change rebuilds them and retires
    *  the old root's runners, so no browser keeps writing into a workspace that has moved away. */
@@ -184,7 +154,7 @@ export class AccountsApi {
     reply(res, 500, { error: '账号服务内部错误' })
   }
 }
-const reply = (res: ServerResponse, status: number, body: unknown): void => {
+export const reply = (res: ServerResponse, status: number, body: unknown): void => {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' })
   res.end(JSON.stringify(body))
 }
