@@ -35,6 +35,13 @@
 | `dt-stat-row` `dt-stat-tile` `dt-stat-tile-value` `dt-stat-tile-label` | 统计块：数值 page 字阶 / 800 在上，label caption 在下 |
 | `dt-empty` `dt-empty-icon` `dt-empty-title` `dt-empty-hint` `dt-empty-action` | 空态：缺了什么、一行提示与引导动作 |
 
+### 区块与列表卡片
+
+| 类 | 角色 |
+|---|---|
+| `dt-section` | 区块白卡：bg-layer-2、发丝线、radius-m、padding 16 |
+| `dt-list` `dt-row` | 卡片行列表：gap 8、每行独立白卡 |
+
 ### 控件与几何
 
 | Token | 值 | 用途 |
