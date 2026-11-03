@@ -110,6 +110,7 @@ export function GateActions({ ticket }: { ticket: TicketPageView }): JSX.Element
   // A held id belongs to one gate round: any stage change drops it, so a later round can never be answered as this round's duplicate.
   useEffect(() => { held.current = {} }, [current.stage, action])
   return <div className="console-gate">
+    {waiting && <span className="console-gate-hint">{t('console.gateWaitingHint')}</span>}
     <Button variant="primary" disabled={!waiting || decide.busy} onClick={() => void decide.run('confirm')}>{t('console.confirmPublish')}</Button>
     <Button variant="outline" disabled={!waiting || decide.busy} onClick={() => void decide.run('refuse')}>{t('console.refusePublish')}</Button>
     {!waiting && <span className="console-gate-stage">{ticketMark(t, current).label}</span>}

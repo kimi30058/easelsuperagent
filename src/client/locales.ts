@@ -162,6 +162,7 @@ const TEXT = {
   'console.send': ['发送', 'Send'],
   'console.confirmPublish': ['确认发布', 'Approve publish'],
   'console.refusePublish': ['拒绝发布', 'Refuse'],
+  'console.gateWaitingHint': ['worker 正等你的答复，确认后继续执行。', 'The worker waits on your answer; confirm to let it proceed.'],
   'console.followUp': ['继续对话…', 'Follow up…'],
   'console.emptyCalendar': ['还没有排期记录', 'No calendar records yet'],
   'console.emptyCalendarHint': ['完成一次发布后，日历会记下这条内容。', 'Once a publish completes, the calendar records it.'],

@@ -30,7 +30,8 @@ body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang S
 .console-compose textarea { box-sizing: border-box; width: 100%; padding: 10px 12px; border: 0.5px solid var(--dsw-alias-border-l4); border-radius: var(--dt-radius-m); background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); font: inherit; font-size: var(--dt-fs-body); line-height: var(--dt-lh-body); resize: vertical; }
 .console-compose textarea:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 1px; }
 .console-compose-follow { margin: 16px 0 0; }
-.console-gate { display: flex; align-items: center; gap: 8px; margin: 0 0 16px; padding: 12px; border: 0.5px solid var(--dsw-alias-border-l3); border-radius: var(--dt-radius-m); background: var(--dsw-alias-bg-layer-2); }
+.console-gate { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 16px; padding: 16px; border: 0.5px solid var(--dsw-alias-border-l3); border-left: 3px solid var(--dsw-alias-state-warn-primary); border-radius: var(--dt-radius-m); background: var(--dsw-alias-bg-layer-2); }
+.console-gate-hint { flex: 1 1 200px; min-width: 0; font-size: var(--dt-fs-body); line-height: var(--dt-lh-body); color: var(--dsw-alias-label-secondary); }
 .console-gate-stage { font-size: var(--dt-fs-meta); line-height: var(--dt-lh-meta); color: var(--dsw-alias-label-secondary); }
 /* Calendar page: one record per card row — the platforms bracket the topic in the head line, every other field follows beneath. */
 .console-entry-title { flex-wrap: wrap; }

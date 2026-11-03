@@ -57,12 +57,12 @@ it('shows a Ticket with its stage, its Mandate details with the Trigger and Deci
   expect(document.querySelector('.dt-page-title h2')?.textContent).toBe('修复回归')
   // Progress is in the Channels and the Session, so the page has no report section.
   expect(all('.dt-section-title').map(title => title.querySelector('.dt-section-name')?.textContent)).toEqual(['授权详情', '未送达的输入', '订阅的线程'])
-  expect(document.querySelector('.dt-status-line .dt-stage')?.textContent).toBe(zh.executingLabel)
-  expect(document.querySelector('.dt-status-line .dt-stage .dt-spinner')).not.toBeNull()
+  expect(document.querySelector('.dt-ticket-headline .dt-stage')?.textContent).toBe(zh.executingLabel)
+  expect(document.querySelector('.dt-ticket-headline .dt-stage .dt-spinner')).not.toBeNull()
   // A Thread this Ticket follows reads as subscribed on its page, though no other Ticket follows it.
   expect(all('.dt-list .dt-ticket .dt-stage').map(stage => stage.textContent)).toContain(zh.threadSubscribed)
   expect(all('.dt-list .dt-ticket .dt-stage').map(stage => stage.textContent)).not.toContain(zh.threadUnsubscribed)
-  expect(all('.dt-status-line .dt-lv').map(item => item.textContent)).toEqual(['授权 明确', '发起 飞书 · Alice', expect.stringMatching(/^更新 /)])
+  expect(all('.dt-ticket-headline .dt-lv').map(item => item.textContent)).toEqual(['授权 明确', '发起 飞书 · Alice', expect.stringMatching(/^更新 /)])
   for (const expected of ['修复登录页回归', '点名方式@ 智能体', '名单里的人明确请求，由主 Session 接单', '未送达：等待派工运行',
     'Alice：顺便改标题']) expect(text()).toContain(expected)
   expect(all('.dt-chip').map(chip => chip.textContent)).toContain('飞书团队群')
@@ -115,7 +115,7 @@ it('offers a Ticket awaiting review its review place and Session in the page hea
     { ...threadSummary({ key: 'github:42', source: 'github', title: '#42 Fix login' }), url: 'https://github.com/acme/widgets/pull/42' }] }
   at({ page: 'execution', id: 't1' })
   await mount()
-  expect(document.querySelector('.dt-status-line .dt-stage')?.textContent).toBe(zh['stage.review'])
+  expect(document.querySelector('.dt-ticket-headline .dt-stage')?.textContent).toBe(zh['stage.review'])
   expect(all('.dt-page-head a').map(link => [link.textContent, link.getAttribute('href')])).toEqual([['打开 GitHub 原文',
     'https://github.com/acme/widgets/pull/42']])
 })
@@ -145,14 +145,14 @@ it('says why an Input was not delivered on its Ticket\'s page, in either languag
   server.ticketDetails.t1 = { ...t1, stage: 'person', action: 'delivery', deliveryError: 'feishu: message recalled' }
   at({ page: 'execution', id: 't1' })
   await mount()
-  expect(document.querySelector('.dt-status-line .dt-stage')?.textContent).toBe(zh['stage.delivery'])
+  expect(document.querySelector('.dt-ticket-headline .dt-stage')?.textContent).toBe(zh['stage.delivery'])
   expect(document.querySelector('.dt-banner.dt-danger')?.textContent).toBe(`${zh.deliveryFailedPrefix}feishu: message recalled`)
   expect(text()).toContain(zh.inputRetryHint)
   expect(text()).not.toContain(zh.inputWaitingHint)
-  expect(document.querySelector('.dt-status-line')?.textContent).toMatch(/9月\d+日/)
+  expect(document.querySelector('.dt-ticket-headline')?.textContent).toMatch(/9月\d+日/)
   await remount(en)
-  expect(document.querySelector('.dt-status-line')?.textContent).toMatch(/Sep \d+/)
-  expect(document.querySelector('.dt-status-line .dt-stage')?.textContent).toBe(en['stage.delivery'])
+  expect(document.querySelector('.dt-ticket-headline')?.textContent).toMatch(/Sep \d+/)
+  expect(document.querySelector('.dt-ticket-headline .dt-stage')?.textContent).toBe(en['stage.delivery'])
   expect(document.querySelector('.dt-banner.dt-danger')?.textContent).toBe(`${en.deliveryFailedPrefix}feishu: message recalled`)
   expect(text()).toContain(en.inputRetryHint)
 })
@@ -206,7 +206,7 @@ it('words an ended Ticket by its outcome, on its row and its page, with a person
   await click(zh['ticket.ended'])
   expect(all('.dt-ticket-stage').map(stage => stage.textContent)).toEqual([zh['outcome.merged'], zh['outcome.stopped']])
   await click('已合并的工单')
-  expect(document.querySelector('.dt-status-line .dt-stage')?.textContent).toBe(zh['outcome.merged'])
+  expect(document.querySelector('.dt-ticket-headline .dt-stage')?.textContent).toBe(zh['outcome.merged'])
   expect(text()).toContain(zh['outcome.merged'])
   expect(text()).not.toContain('执行器结束')
   server.ticketDetails.t3 = { ...server.ticketDetails.t3, ended: { at: '2026-09-21T00:00:00Z', by: 'human', outcome: 'stopped',

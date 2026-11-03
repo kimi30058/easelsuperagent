@@ -168,3 +168,12 @@ it('disables the publish actions with the current stage while the executor works
   expect((find(zh['console.refusePublish']) as HTMLButtonElement).disabled).toBe(true)
   expect(find(zh['console.confirmPublish']).closest('.console-gate')?.textContent).toContain(zh['stage.working'])
 })
+
+it('renders the ticket page with the headline card and the gate banner', async () => {
+  await mountConsole()
+  await goto('#/execution/t1')
+  expect(document.querySelector('.dt-ticket-headline .dt-stage')?.textContent).toBeTruthy()
+  const values = [...document.querySelectorAll('.dt-ticket-headline .dt-lv-label')].map(label => label.textContent)
+  expect(values).toContain(zh['ticketMandateLabel'])
+  expect(document.querySelector('.console-gate')).not.toBeNull()
+})

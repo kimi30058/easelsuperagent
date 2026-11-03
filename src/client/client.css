@@ -134,6 +134,10 @@ div.dt-preview-head { color: var(--dsw-alias-label-secondary); }
 .dt-page-title { display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; width: 100%; }
 .dt-page-title h2 { margin: 0; flex: 1 1 auto; min-width: 0; font-size: var(--dt-fs-page); line-height: var(--dt-lh-page); font-weight: 500; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .dt-status-line { margin-top: -16px; }
+/* The Ticket's stage as its headline: a paper card whose large stage mark leads the Mandate facts on a grid. */
+.dt-ticket-headline { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px 16px; align-items: center; padding: 14px 16px; border: 0.5px solid var(--dsw-alias-border-l3); border-radius: var(--dt-radius-m); background: var(--dsw-alias-bg-layer-2); }
+.dt-ticket-headline .dt-stage { font-size: var(--dt-fs-title); line-height: var(--dt-lh-title); font-weight: 600; }
+.dt-ticket-headline .dt-lv { white-space: normal; display: flex; flex-direction: column; gap: 2px; }
 .dt-plain-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: var(--dt-fs-body); line-height: var(--dt-lh-body); }
 .dt-details { display: flex; flex-direction: column; gap: 2px; border-top: 0.5px solid var(--dsw-alias-border-l2); padding-top: 8px; }
 .dt-danger-zone { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding-top: 16px; border-top: 0.5px solid var(--dsw-alias-border-l2); }

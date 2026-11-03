@@ -134,7 +134,7 @@ export function TicketPage({ id }: { id: string }) {
       {data.sessionId && <SessionButton variant="outline" sessionId={data.sessionId} />}
     </PageHead>
     {error && <LoadState error={error} loading={false} />}
-    <div className="dt-row-meta dt-status-line">
+    <div className="dt-ticket-headline">
       <StageMark state={status.dot} icon={status.icon} label={status.label} />
       <LabelValue label={t('ticketMandateLabel')} value={valueLabel(t, 'strength', data.mandate.strength)} />
       <LabelValue label={t('ticketActorLabel')} value={`${valueLabel(t, 'source', data.mandate.actor.source)} · ${actor}`} />
