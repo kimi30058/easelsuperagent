@@ -158,6 +158,9 @@ it('opens the credentials modal from the card, saves all four fields, and shows 
   const modal = document.querySelector('.console-modal-card')!
   expect(modal.querySelector('h2')?.textContent).toBe(zh['console.credentials'])
   expect(modal.textContent).toContain('wx12****')
+  // 已存的名称/默认作者预填进表单：轮换密钥不重填也能原样带回，不会被空值抹掉
+  expect((document.getElementById('credential-name') as HTMLInputElement).value).toBe('主号')
+  expect((document.getElementById('credential-author') as HTMLInputElement).value).toBe('阿一')
   await type(document.getElementById('credential-appid') as HTMLInputElement, 'wx1234567890')
   await type(document.getElementById('credential-secret') as HTMLInputElement, 'secret-x')
   await type(document.getElementById('credential-name') as HTMLInputElement, '主号')

@@ -177,7 +177,12 @@ function CredentialsModal({ onClose }: { onClose(): void }): JSX.Element {
   const [fields, setFields] = useState({ appId: '', appSecret: '', name: '', author: '' })
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
-  useEffect(() => { void accountsFetch<CredentialsView>('/accounts/wechat-oa/credentials').then(setView).catch(() => undefined) }, [])
+  // 已存名称/默认作者预填进表单：只轮换 AppID/AppSecret 的保存把原值带回，不会用空串抹掉（服务端整组覆写）。
+  useEffect(() => {
+    void accountsFetch<CredentialsView>('/accounts/wechat-oa/credentials')
+      .then(view => { setView(view); setFields(previous => ({ ...previous, name: view.name, author: view.author })) })
+      .catch(() => undefined)
+  }, [])
   const close = useCallback((): void => onClose(), [onClose])
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => { if (event.key === 'Escape') close() }
