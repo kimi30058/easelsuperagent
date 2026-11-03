@@ -60,18 +60,29 @@ it('renders each record as a card row: platform and topic lead, every other fiel
   expect([...third.querySelectorAll('dt')].map(term => term.textContent)).toEqual(['note'])
 })
 
-it('lists the personas and the skills of the workspace', async () => {
+it('renders skills as a card grid and personas as a two-column grid with directory paths', async () => {
   served.personas = () => reply({ items: [{ name: '小红书主号' }, { name: '公众号小助手' }] })
   served.skills = () => reply({ items: [
     { name: 'copywriting', description: '营销文案写作' },
     { name: 'seo', description: '搜索引擎优化' },
   ] })
   await mountConsole()
-  await goto('#/personas')
-  expect(all('.dt-row-title').map(title => title.textContent)).toEqual(['小红书主号', '公众号小助手'])
   await goto('#/skills')
-  expect(all('.dt-row-title').map(title => title.textContent)).toEqual(['copywriting', 'seo'])
-  expect(all('.dt-row-meta').map(meta => meta.textContent)).toEqual(['营销文案写作', '搜索引擎优化'])
+  expect(all('.console-card-grid .console-card')).toHaveLength(2)
+  expect(all('.console-card-grid .dt-row-title').map(title => title.textContent)).toEqual(['copywriting', 'seo'])
+  expect(all('.console-card-grid .dt-row-meta').map(meta => meta.textContent)).toEqual(['营销文案写作', '搜索引擎优化'])
+  await goto('#/personas')
+  expect(all('.console-persona-grid .console-card .dt-row-title').map(title => title.textContent))
+    .toEqual(['小红书主号', '公众号小助手'])
+  expect(all('.console-persona-grid .dt-row-meta').map(meta => meta.textContent)).toEqual(['profiles/小红书主号/', 'profiles/公众号小助手/'])
+})
+
+it('shows the personas empty state with guidance while the workspace has none', async () => {
+  served.personas = () => reply({ items: [] })
+  await mountConsole()
+  await goto('#/personas')
+  expect(document.querySelector('.dt-empty-title')?.textContent).toBe(zh['console.emptyPersonasTitle'])
+  expect(document.querySelector('.dt-empty-hint')?.textContent).toBe(zh['console.emptyPersonasHint'])
 })
 
 it('shows the empty state with its guidance action while the workspace has none recorded', async () => {

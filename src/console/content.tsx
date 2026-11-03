@@ -2,7 +2,7 @@
 import { ApiError, usePoll } from '../client/api.ts'
 import { Button } from '../client/controls.tsx'
 import { usePanel } from '../client/provider.tsx'
-import { EmptyState, Hint, KeyValues, LoadState, PageHeader, Section } from '../client/widgets.tsx'
+import { EmptyState, KeyValues, LoadState, PageHeader, Section } from '../client/widgets.tsx'
 
 /** A record's value as text: objects and arrays as their JSON, everything else as written; no value's shape is guessed at. */
 const valueText = (value: unknown): string =>
@@ -54,17 +54,19 @@ export function CalendarPage(): JSX.Element {
   </>
 }
 
-/** The personas page: the workspace's account directories, one row each. */
+/** The personas page: the workspace's account directories, one card each with its path. */
 export function PersonasPage(): JSX.Element {
   const { t, call } = usePanel()
   const { data, error } = usePoll(() => call('GET personas'), [call])
   return <>
+    <PageHeader title={t('nav.personas')} hint={t('console.personasIntro')} />
     <LoadState error={error} loading={!data} />
-    {data && (data.items.length ? <ul className="dt-list">
-      {data.items.map(persona => <li className="dt-row" key={persona.name}>
+    {data && (data.items.length ? <div className="console-persona-grid">
+      {data.items.map(persona => <div className="console-card" key={persona.name}>
         <div className="dt-row-title">{persona.name}</div>
-      </li>)}
-    </ul> : <Hint>{t('none')}</Hint>)}
+        <div className="dt-row-meta dt-mono">profiles/{persona.name}/</div>
+      </div>)}
+    </div> : <EmptyState icon="settings" title={t('console.emptyPersonasTitle')} hint={t('console.emptyPersonasHint')} />)}
   </>
 }
 
@@ -73,12 +75,13 @@ export function SkillsPage(): JSX.Element {
   const { t, call } = usePanel()
   const { data, error } = usePoll(() => call('GET skills'), [call])
   return <>
+    <PageHeader title={t('nav.skills')} hint={t('console.skillsIntro')} />
     <LoadState error={error} loading={!data} />
-    {data && (data.items.length ? <ul className="dt-list">
-      {data.items.map(skill => <li className="dt-row" key={skill.name}>
+    {data && (data.items.length ? <div className="console-card-grid">
+      {data.items.map(skill => <div className="console-card" key={skill.name}>
         <div className="dt-row-title">{skill.name}</div>
         <div className="dt-row-meta">{skill.description}</div>
-      </li>)}
-    </ul> : <Hint>{t('none')}</Hint>)}
+      </div>)}
+    </div> : <EmptyState icon="settings" title={t('none')} />)}
   </>
 }

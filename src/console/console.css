@@ -71,4 +71,8 @@ body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang S
 .console-form input:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 1px; }
 /* The destructive fill must outrank `.dt-btn-ghost`, whose stylesheet the panel injects after this skin. */
 .console-danger { background: var(--dsw-alias-state-error-primary, #dc2626) !important; color: var(--dsw-alias-label-primary-foreground, #fff) !important; }
+/* Workspace content pages: the skills fill the row as cards on the accounts grid; persona directories sit two-up and fold to one column when the page narrows. */
+.console-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
+.console-persona-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+@container (max-width: 640px) { .console-persona-grid { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .console-nav a, .console-modal, .console-modal * { transition: none; } }
