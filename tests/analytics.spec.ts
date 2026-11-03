@@ -197,6 +197,7 @@ describe('AnalyticsRunners queue', () => {
     await utimes(latestPath(root, 'xiaohongshu'), back, back)
     expect(await runners.catchUp()).toBe(1)
     for (const flight of flights.slice()) await flight.exit(0)                         // 收尾：catchUp 起的航班也落停
+    await settle(60)                                                                  // writeLatest+appendSnapshot 落完再交给 afterEach 的 rm
   })
 
   it('snapshots every successful fetch — the execution root\'s jsonl is sidecar-owned', async () => {
