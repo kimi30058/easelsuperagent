@@ -9,3 +9,6 @@ cookies.json
 .venv/
 __pycache__/
 .codegraph/
+CLAUDE.md
+CONTEXT.md
+docs/
