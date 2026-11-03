@@ -11,6 +11,8 @@ import {
 import { loginCommand, LoginRunners, type RunnerHandle, type SpawnLogin } from '../src/console/login-runner.ts'
 import { Whoami, type RunCommand } from '../src/console/whoami.ts'
 import { WechatCredentials } from '../src/console/wechat-credentials.ts'
+import { AccountsApi } from '../src/console/accounts-api.ts'
+import { createServer, type Server } from 'node:http'
 
 /** A run() answering by script filename; the real one runs python with a timeout. */
 const runFrom = (table: Record<string, { code: number; stdout: string } | Error>): RunCommand =>
@@ -325,5 +327,95 @@ describe('WechatCredentials', () => {
     const creds = new WechatCredentials({ scriptsDir: '/s', run: runFrom({}) })
     await expect(creds.save('', 'x', '', '')).rejects.toMatchObject({ status: 400 })
     await expect(creds.save('x', '', '', '')).rejects.toMatchObject({ status: 400 })
+  })
+})
+
+/** An api mounted on a real HTTP server with a settings upstream naming our temp root (and its own home for profile deletes). */
+async function mounted(over?: { settings?: object | 'dead'; home?: string }): Promise<{ base: string; close(): Promise<void> }> {
+  const settings = createServer((req, res) => {
+    if (over?.settings === 'dead') { res.destroy(); return }
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify(over?.settings ?? { environment: { root, variables: [] } }))
+  })
+  await new Promise<void>(r => settings.listen(0, '127.0.0.1', r))
+  const upstream = `http://127.0.0.1:${(settings.address() as { port: number }).port}`
+  const api = new AccountsApi({ upstream, scriptsDir: '/s', home: over?.home ?? root })
+  const server = createServer((req, res) => {
+    void api.handle(req, new URL(req.url ?? '/', 'http://127.0.0.1'), res).catch(() => res.destroy())
+  })
+  await new Promise<void>(r => server.listen(0, '127.0.0.1', r))
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`
+  return { base, close: async () => {
+    await api.stopAll()
+    await new Promise<void>(r => server.close(() => r())); await new Promise<void>(r => settings.close(() => r()))
+  } }
+}
+const post = (base: string, path: string, body?: unknown): Promise<Response> =>
+  fetch(base + path, { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body) })
+
+describe('AccountsApi routes', () => {
+  it('lists the four cards with fast-path login state', async () => {
+    const { base, close } = await mounted()
+    try {
+      const cards = await (await fetch(`${base}/api/accounts`)).json() as { platform: string; loggedIn: boolean }[]
+      expect(cards.map(card => card.platform)).toEqual(['xiaohongshu', 'bilibili', 'douyin', 'wechat-oa'])
+      expect(cards[0]!.loggedIn).toBe(false)
+    } finally { await close() }
+  })
+
+  it('answers unknown platforms and injected paths with 404, never a filesystem touch', async () => {
+    const { base, close } = await mounted()
+    try {
+      expect((await fetch(`${base}/api/login/..%2f..%2fetc/status`)).status).toBe(404)   // Review Focus 1
+      expect((await post(base, '/api/login/kuaishou')).status).toBe(404)
+      expect((await fetch(`${base}/api/accounts/tail/whoami`)).status).toBe(404)
+    } finally { await close() }
+  })
+
+  it('returns 503 for every account route while the orchestrator is unreachable and no root is cached', async () => {
+    const { base, close } = await mounted({ settings: 'dead' })                            // Review Focus 5
+    try {
+      expect((await fetch(`${base}/api/accounts`)).status).toBe(503)
+      expect((await post(base, '/api/login/xiaohongshu')).status).toBe(503)
+    } finally { await close() }
+  })
+
+  it('writes a valid sms code and rejects a malformed one with 400', async () => {
+    const { base, close } = await mounted()
+    try {
+      expect((await post(base, '/api/login/douyin/sms', { code: '654321' })).status).toBe(200)
+      expect(await readFile(loginPaths(root, 'douyin').code, 'utf8')).toBe('654321')
+      expect((await post(base, '/api/login/douyin/sms', { code: '12' })).status).toBe(400)
+    } finally { await close() }
+  })
+
+  it('serves the QR png with no-store once written', async () => {
+    const paths = loginPaths(root, 'xiaohongshu')
+    await mkdir(paths.dir, { recursive: true })
+    await writeFile(paths.status, JSON.stringify({ state: 'qr_ready', message: '', qr: '', ts: 1 }), 'utf8')
+    await writeFile(paths.qr, Buffer.from([1, 2, 3]))
+    const { base, close } = await mounted()
+    try {
+      const response = await fetch(`${base}/api/login/xiaohongshu/qr`)
+      expect(response.status).toBe(200)
+      expect(response.headers.get('content-type')).toBe('image/png')
+      expect(response.headers.get('cache-control')).toBe('no-store')
+      expect(Buffer.from(await response.arrayBuffer())).toEqual(Buffer.from([1, 2, 3]))
+    } finally { await close() }
+  })
+
+  it('logout removes the artifacts and the profile directory', async () => {
+    const paths = loginPaths(root, 'xiaohongshu')
+    await writeMarker(paths, 'success', 'n')
+    const profile = join(root, '.easel-browser-profiles', 'XiaohongshuProfile')
+    await mkdir(profile, { recursive: true })
+    const { base, close } = await mounted()
+    try {
+      expect((await post(base, '/api/logout/xiaohongshu')).status).toBe(200)
+      expect((await readStatus(paths)).state).toBe('unknown')
+      const { stat } = await import('node:fs/promises')
+      await expect(stat(profile)).rejects.toThrow()
+    } finally { await close() }
   })
 })
