@@ -11,6 +11,7 @@ import {
 import { AccountError, LoginRunners, type SpawnLogin } from './login-runner.ts'
 import { Whoami, type RunCommand } from './whoami.ts'
 import { WechatCredentials } from './wechat-credentials.ts'
+import { ExecutionRoot } from './execution-root.ts'
 
 /** Read one JSON request body, refusing anything over 64KB — these forms are a handful of fields. */
 export async function readBody(req: IncomingMessage): Promise<unknown> {
@@ -26,14 +27,15 @@ export async function readBody(req: IncomingMessage): Promise<unknown> {
 /** The sidecar's account routes: everything under /api/*, answered in place (never proxied). */
 export class AccountsApi {
   private readonly deps: { upstream: string; scriptsDir: string; home: string; spawnLogin?: SpawnLogin; run?: RunCommand }
-  private root?: string
+  private readonly resolver: ExecutionRoot
   private runners?: LoginRunners
   private whoami?: Whoami
   private credentials?: WechatCredentials
-  constructor(deps?: { upstream?: string; scriptsDir?: string; spawnLogin?: SpawnLogin; run?: RunCommand; home?: string }) {
+  constructor(deps?: { upstream?: string; scriptsDir?: string; spawnLogin?: SpawnLogin; run?: RunCommand; home?: string; root?: ExecutionRoot }) {
     this.deps = { upstream: deps?.upstream ?? process.env.EASEL_SUPERAGENT_URL ?? 'http://127.0.0.1:3082',
       scriptsDir: deps?.scriptsDir ?? defaultScriptsDir(), home: deps?.home ?? homedir(),
       spawnLogin: deps?.spawnLogin, run: deps?.run }
+    this.resolver = deps?.root ?? new ExecutionRoot({ upstream: this.deps.upstream })
   }
   /** Claim and answer one request when it falls under /api/*; false lets the caller carry on. */
   async handle(req: IncomingMessage, url: URL, res: ServerResponse): Promise<boolean> {
@@ -45,7 +47,10 @@ export class AccountsApi {
   /** Terminate every live runner (the sidecar's close path). */
   async stopAll(): Promise<void> { await this.runners?.stopAll() }
   private async route(req: IncomingMessage, url: URL, res: ServerResponse): Promise<void> {
-    const parts = url.pathname.slice('/api/'.length).split('/').map(decodeURIComponent)
+    // 畸形 %-序列按 400 应答，与 publish 域同一句话——不靠 server.ts 的调用顺序兜底成 500。
+    let parts: string[]
+    try { parts = url.pathname.slice('/api/'.length).split('/').map(decodeURIComponent) }
+    catch { throw new AccountError(400, '路径包含非法的百分号转义') }
     const [one, two, three] = parts
     const method = req.method ?? 'GET'
     if (method === 'GET' && one === 'accounts' && two === undefined && three === undefined)
@@ -81,8 +86,7 @@ export class AccountsApi {
   }
   /** The card list: the fast path plus each platform's own words; wechat-oa also counts configured credentials. */
   private async cards(): Promise<unknown> {
-    const { credentials } = await this.domain()
-    const root = this.root!
+    const { credentials, root } = await this.domain()
     return Promise.all(PLATFORMS.map(async spec => {
       const loginKey: ProcessKey = spec.platform === 'wechat-oa' ? 'wechat-oa-mp' : spec.platform
       let loggedIn = await loggedInFast(root, loginKey)
@@ -113,33 +117,25 @@ export class AccountsApi {
   }
   /** Logout: stop the runner(s), clear every artifact, remove the profile directory (and biliup's cookie, wechat's credentials). */
   private async logout(platform: LoginPlatform): Promise<void> {
-    const { runners, credentials } = await this.domain()
+    const { runners, credentials, root } = await this.domain()
     const keys: ProcessKey[] = platform === 'wechat-oa' ? ['wechat-oa', 'wechat-oa-mp'] : [platform]
-    for (const key of keys) {
+    // 每键各自走一个 terminate 窗口，两键并行收尾：串行会把窗口叠着算进同一个 POST。
+    await Promise.all(keys.map(async key => {
       await runners.cancel(key).catch(() => undefined)
-      await clearArtifacts(loginPaths(this.root!, key))
+      await clearArtifacts(loginPaths(root, key))
       const profile = profileDir(key, this.deps.home)
       if (profile !== undefined) await rm(profile, { recursive: true, force: true })
-    }
-    if (platform === 'bilibili') await rm(bilibiliCookiePath(this.root!), { force: true })
+    }))
+    if (platform === 'bilibili') await rm(bilibiliCookiePath(root), { force: true })
     if (platform === 'wechat-oa') await credentials.clear()
   }
-  /** The cached execution root from the orchestrator's settings view; 503 until it is known. */
+  /** The execution root via the shared resolver; 503 until it is first known, then pinned for the sidecar's lifetime. */
   private async executionRoot(): Promise<string> {
-    if (this.root !== undefined) return this.root
-    let settings: { environment?: { root?: unknown } }
-    try {
-      const response = await fetch(`${this.deps.upstream}/orchestrator/api/settings`, { signal: AbortSignal.timeout(4000) })
-      if (!response.ok) throw new Error(`settings ${response.status}`)
-      settings = await response.json() as typeof settings
-    } catch { throw new AccountError(503, '编排器不可达，无法定位工作根目录') }
-    const root = settings.environment?.root
-    if (typeof root !== 'string' || !root) throw new AccountError(503, '编排器设置缺少工作根目录')
-    this.root = root
-    return root
+    return await this.resolver.get()
   }
-  /** Build (once per root) and share the domain objects a request needs. */
-  private async domain(): Promise<{ runners: LoginRunners; whoami: Whoami; credentials: WechatCredentials }> {
+  /** Build (once) and share the domain objects a request needs. The root is pinned for the sidecar's lifetime, so
+   *  one build serves every request — a rebuilt or migrated workspace is picked up by restarting the sidecar. */
+  private async domain(): Promise<{ root: string; runners: LoginRunners; whoami: Whoami; credentials: WechatCredentials }> {
     const root = await this.executionRoot()
     if (this.runners === undefined || this.whoami === undefined || this.credentials === undefined) {
       const deps = { root, scriptsDir: this.deps.scriptsDir }
@@ -148,14 +144,14 @@ export class AccountsApi {
       this.whoami = new Whoami({ ...deps, runners: this.runners, run: this.deps.run,
         wechatConfigured: async () => (await this.credentials!.get()).configured })
     }
-    return { runners: this.runners, whoami: this.whoami, credentials: this.credentials }
+    return { root, runners: this.runners, whoami: this.whoami, credentials: this.credentials }
   }
   private fail(res: ServerResponse, error: unknown): void {
     if (error instanceof AccountError) return reply(res, error.status, { error: error.message })
     reply(res, 500, { error: '账号服务内部错误' })
   }
 }
-const reply = (res: ServerResponse, status: number, body: unknown): void => {
+export const reply = (res: ServerResponse, status: number, body: unknown): void => {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' })
   res.end(JSON.stringify(body))
 }

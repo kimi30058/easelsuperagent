@@ -4,6 +4,7 @@ import { Button, Icon } from '../client/controls.tsx'
 import { usePanel } from '../client/provider.tsx'
 import type { T } from '../client/text.ts'
 import { PageHeader } from '../client/widgets.tsx'
+import { live, type PublishView } from './publish-view.ts'
 
 export interface AccountCard { platform: string; name: string; backend: string; note: string; loggedIn: boolean }
 export interface WhoamiView { loggedIn: boolean; name: string; avatar: string }
@@ -231,6 +232,14 @@ function LoginModal({ platform, name, onClose }: { platform: string; name: strin
   const [sms, setSms] = useState('')
   const [smsError, setSmsError] = useState('')
   const [busy, setBusy] = useState(false)
+  // 有发布进行中时先说一声：worker 正占着浏览器 profile，登录可能直接失败（SP3 spec §4 软提示）。
+  // 判活与发布页同一套谓词：无状态文件的平台（xhs/B站/公众号）只靠日志新鲜度兜，恰是 profile 被占的场景。
+  const [publishHint, setPublishHint] = useState(false)
+  useEffect(() => {
+    void accountsFetch<PublishView[]>('/publish')
+      .then(views => setPublishHint(views.some(live)))
+      .catch(() => undefined)
+  }, [])
   const terminal = status.state === 'success' || status.state === 'expired' || status.state === 'error'
   useEffect(() => {
     void accountsFetch<LoginStatusView>(`/login/${platform}`, { method: 'POST' })
@@ -274,6 +283,7 @@ function LoginModal({ platform, name, onClose }: { platform: string; name: strin
     onClick={close}>
     <div className="console-modal-card" onClick={event => event.stopPropagation()}>
       <h2>{name}</h2>
+      {publishHint && <p className="console-card-note">{t('console.publishLoginHint')}</p>}
       <p className="console-card-note" role="status" aria-atomic="true">
         {status.message || stateText(t, status.state)}
       </p>

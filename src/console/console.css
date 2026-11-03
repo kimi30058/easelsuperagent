@@ -69,6 +69,7 @@ body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang S
 .console-form { display: flex; flex-direction: column; gap: 8px; }
 .console-form label { font-size: var(--dt-fs-meta); line-height: var(--dt-lh-meta); color: var(--dsw-alias-label-secondary); }
 .console-form input { min-height: var(--dt-touch-h); padding: 8px 12px; border: 0.5px solid var(--dsw-alias-border-l4); border-radius: var(--dt-radius-s); background: var(--dsw-alias-bg-layer-1, transparent); color: var(--dsw-alias-label-primary); font: inherit; font-size: var(--dt-fs-body); line-height: var(--dt-lh-body); }
+.console-publish-log { font-family: var(--ds-font-family-code, ui-monospace, Menlo, monospace); font-size: var(--dt-fs-meta); line-height: var(--dt-lh-meta); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 120px; overflow-y: auto; margin: 8px 0 0; }
 .console-form input:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 1px; }
 /* The destructive fill must outrank `.dt-btn-ghost`, whose stylesheet the panel injects after this skin. */
 .console-danger { background: var(--dsw-alias-state-error-primary, #dc2626) !important; color: var(--dsw-alias-label-primary-foreground, #fff) !important; }

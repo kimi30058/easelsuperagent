@@ -161,7 +161,8 @@ it('answers /api/accounts through the mounted account domain, behind the Host ch
     upstream: `http://127.0.0.1:${(upstream.address() as { port: number }).port}`, staticDir: await mkdtempLite() })
   try {
     const cards = await (await fetch(`${server.url}/api/accounts`)).json() as { platform: string }[]
-    expect(cards.map(card => card.platform)).toEqual(['xiaohongshu', 'bilibili', 'douyin', 'wechat-oa'])
+    expect(cards.map(card => card.platform)).toEqual(
+      ['xiaohongshu', 'bilibili', 'douyin', 'wechat-oa', 'kuaishou', 'weixin-channels', 'zhihu'])
     // Host 校验先于一切路由：坏 Host 的 /api 请求同样被拒
     const refused = await ask(`${server.url}/api/accounts`, { host: 'evil.example:3083' })
     expect(refused.status).toBe(403)

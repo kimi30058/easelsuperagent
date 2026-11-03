@@ -3,6 +3,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { AccountsApi } from './accounts-api.ts'
+import { ExecutionRoot } from './execution-root.ts'
+import { PublishApi } from './publish-api.ts'
 import INDEX from './index.html?raw'
 
 export interface ConsoleServerOptions { port?: number; host?: string; upstream?: string; staticDir?: string }
@@ -16,10 +18,13 @@ export class ConsoleServer {
     const config: Required<ConsoleServerOptions> = { port: options.port ?? Number(process.env.CONSOLE_PORT ?? 3083), host: '127.0.0.1',
       upstream: options.upstream ?? process.env.EASEL_SUPERAGENT_URL ?? 'http://127.0.0.1:3082',
       staticDir: options.staticDir ?? join(dirname(fileURLToPath(import.meta.url)), 'console') }
-    const accounts = new AccountsApi({ upstream: config.upstream })
+    // The execution root is one resolver shared by every sidecar API domain, so they always speak of one workspace.
+    const root = new ExecutionRoot({ upstream: config.upstream })
+    const accounts = new AccountsApi({ upstream: config.upstream, root })
+    const publishes = new PublishApi({ root })
     // Requests only arrive after listening replaces `bound` with the resolved port (ephemeral when 0 was requested),
     // which is the port every Host check below compares against.
-    let bound: Bound = { ...config, accounts }
+    let bound: Bound = { ...config, accounts, publishes }
     // A request that fails (a client aborting mid-body, an unparseable URL) destroys its socket instead of rejecting
     // an unhandled promise and taking the process down.
     const server = createServer((req, res) => void handle(bound, req, res).catch(() => res.destroy()))
@@ -34,7 +39,7 @@ export class ConsoleServer {
     await new Promise<void>(resolve => this.server.close(() => resolve()))
   }
 }
-type Bound = Required<ConsoleServerOptions> & { accounts: AccountsApi }
+type Bound = Required<ConsoleServerOptions> & { accounts: AccountsApi; publishes: PublishApi }
 async function handle(config: Bound, req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? '/', 'http://127.0.0.1')
   // The Host check is the sidecar's DNS-rebinding defense, mirroring sameOrigin() in src/app/http.ts: a page whose domain
@@ -50,7 +55,9 @@ async function handle(config: Bound, req: IncomingMessage, res: ServerResponse):
     catch { return send(res, 404, 'application/json', '{"error":"console bundle not built"}') }
   }
   if (url.pathname.startsWith('/api/')) {
-    // The account domain lives in this sidecar (SP1's shape: SP2+ adds routes here, never proxied); it claims every /api path.
+    // The console's own domains live in this sidecar (SP1's shape: SP2+ adds routes here, never proxied); each
+    // claims its prefix, and each answers a malformed escape 400 itself, so the order between them carries no weight.
+    if (await config.publishes.handle(req, url, res)) return
     await config.accounts.handle(req, url, res)
     return
   }

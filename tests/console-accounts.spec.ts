@@ -8,10 +8,11 @@ import {
   PLATFORMS, PROCESS_KEYS, bilibiliCookiePath, clearArtifacts, isPlatform, isProcessKey,
   loggedInFast, loginDir, loginPaths, profileDir, readQr, readStatus, validSmsCode, writeMarker, writeSmsCode,
 } from '../src/console/login-protocol.ts'
-import { loginCommand, LoginRunners, type RunnerHandle, type SpawnLogin } from '../src/console/login-runner.ts'
-import { Whoami, type RunCommand } from '../src/console/whoami.ts'
+import { AccountError, loginCommand, LoginRunners, type RunnerHandle, type SpawnLogin } from '../src/console/login-runner.ts'
+import { runReal, Whoami, type RunCommand } from '../src/console/whoami.ts'
 import { WechatCredentials } from '../src/console/wechat-credentials.ts'
 import { AccountsApi } from '../src/console/accounts-api.ts'
+import { ExecutionRoot } from '../src/console/execution-root.ts'
 import { createServer, type Server } from 'node:http'
 
 /** A run() answering by script filename; the real one runs python with a timeout. */
@@ -28,17 +29,23 @@ beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'sp2-protocol-')) }
 afterEach(async () => { await rm(root, { recursive: true, force: true }) })
 
 describe('platform table', () => {
-  it('lists the four fork platforms plus the wechat-oa-mp process key, and rejects anything else', () => {
-    expect(PLATFORMS.map(p => p.platform)).toEqual(['xiaohongshu', 'bilibili', 'douyin', 'wechat-oa'])
+  it('lists the seven fork platforms plus the wechat-oa-mp process key, and rejects anything else', () => {
+    expect(PLATFORMS.map(p => p.platform)).toEqual(
+      ['xiaohongshu', 'bilibili', 'douyin', 'wechat-oa', 'kuaishou', 'weixin-channels', 'zhihu'])
     expect(PROCESS_KEYS).toContain('wechat-oa-mp')
-    expect(isPlatform('xiaohongshu')).toBe(true)
-    expect(isPlatform('kuaishou')).toBe(false)          // fork 发布范围外的 Easel 平台
+    expect(isPlatform('kuaishou')).toBe(true)           // web_publisher 族，spec 2026-11-03 接入
+    expect(isPlatform('weixin-channels')).toBe(true)
+    expect(isPlatform('zhihu')).toBe(true)
+    expect(isPlatform('weibo')).toBe(false)             // 真未知平台（原 kuaishou 钉子反转，Review Focus 2）
     expect(isProcessKey('../../etc')).toBe(false)       // Review Focus 1
   })
 
   it('maps browser platforms to their global profile directory and leaves biliup/wechat-oa without one', () => {
     expect(profileDir('xiaohongshu')).toContain('XiaohongshuProfile')
     expect(profileDir('wechat-oa-mp')).toContain('WeixinMpProfile')
+    expect(profileDir('kuaishou')).toContain('KuaishouProfile')
+    expect(profileDir('weixin-channels')).toContain('ChannelsProfile')
+    expect(profileDir('zhihu')).toContain('ZhihuProfile')
     expect(profileDir('bilibili')).toBeUndefined()
     expect(profileDir('wechat-oa')).toBeUndefined()
   })
@@ -132,6 +139,31 @@ function fakeSpawn(): { spawnLogin: SpawnLogin; commands: string[][]; handles: F
   return { spawnLogin, commands, handles }
 }
 
+describe('python interpreter', () => {
+  it('prefers EASEL_PYTHON, then the venv beside the skill library, then bare python3', async () => {
+    const { pythonBin } = await import('../src/console/python.ts')
+    const previous = process.env.EASEL_PYTHON
+    try {
+      process.env.EASEL_PYTHON = '/opt/custom/python'
+      expect(pythonBin('/repo/skills/easel/shared/scripts')).toBe('/opt/custom/python')
+      delete process.env.EASEL_PYTHON
+      expect(pythonBin('/repo/skills/easel/shared/scripts')).toBe('python3')          // /repo/.venv 不存在
+      const repo = await mkdtemp(join(tmpdir(), 'sp2-venv-'))
+      const scripts = join(repo, 'skills', 'easel', 'shared', 'scripts')
+      const venvPy = join(repo, '.venv', 'bin', 'python')
+      await mkdir(join(venvPy, '..'), { recursive: true })
+      await writeFile(venvPy, '', 'utf8')
+      expect(pythonBin(scripts)).toBe(venvPy)
+    } finally {
+      if (previous === undefined) delete process.env.EASEL_PYTHON; else process.env.EASEL_PYTHON = previous
+    }
+  })
+  it('runs the login with the resolved interpreter', () => {
+    const deps = { root, scriptsDir: '/repo/skills/easel/shared/scripts', python: '/repo/.venv/bin/python' }
+    expect(loginCommand(deps, 'xiaohongshu')[0]).toBe('/repo/.venv/bin/python')
+  })
+})
+
 describe('login commands', () => {
   it('passes every path explicitly per platform (ADR-0007)', () => {
     const deps = { root, scriptsDir: '/repo/skills/easel/shared/scripts' }
@@ -148,6 +180,21 @@ describe('login commands', () => {
     expect(douyin.some(part => part.endsWith('douyin_publish.py'))).toBe(true)
     expect(loginCommand(deps, 'wechat-oa-mp').some(part => part.endsWith('weixin_mp_stats.py'))).toBe(true)
     expect(() => loginCommand(deps, 'wechat-oa')).toThrow()
+  })
+
+  it('runs the web_publisher family headless: login-qr with --platform, never sms or proxy flags', () => {
+    const deps = { root, scriptsDir: '/repo/skills/easel/shared/scripts' }
+    for (const key of ['kuaishou', 'weixin-channels', 'zhihu'] as const) {
+      const argv = loginCommand(deps, key)
+      expect(argv.some(part => part.endsWith('web_publisher.py'))).toBe(true)
+      expect(argv).toContain('login-qr')               // login 是有头人工登录，runner 必须用 login-qr
+      expect(argv).toContain('--platform')
+      expect(argv[argv.indexOf('--platform') + 1]).toBe(key)   // key 即 --platform 参数值
+      expect(argv).toContain(join(root, 'outputs', '_login', `${key}.png`))    // ADR-0007 显式传参
+      expect(argv).toContain(join(root, 'outputs', '_login', `${key}.json`))
+      expect(argv).not.toContain('--sms-code-file')    // 三家登录无短信墙，传了 unrecognized-argument（Review Focus 1）
+      expect(argv).not.toContain('--no-proxy')         // 脚本内部 launch 已带 --no-proxy-server
+    }
   })
 })
 
@@ -276,6 +323,19 @@ describe('review fixes: real spawn path, cancel guard, kill escalation', () => {
     expect(handle.signals).toEqual(['SIGTERM', 'SIGKILL'])
     expect((await runners.status('douyin')).state).toBe('expired')
   })
+
+  it('settles a runner whose binary never spawns (ENOENT) instead of wedging the key in-flight', async () => {
+    const previousPath = process.env.PATH
+    process.env.PATH = ''                                // 解析到的 python3 找不到：spawn 只发 error，不发 exit
+    try {
+      const runners = new LoginRunners({ root, scriptsDir: '/s', terminateWindowMs: 60 })
+      await runners.start('xiaohongshu')
+      expect(await runners.waitExit('xiaohongshu')).toBe(true)                        // exited 落定
+      expect(runners.isRunning('xiaohongshu')).toBe(false)
+      expect((await runners.status('xiaohongshu')).state).toBe('error')              // 合成异常退出并指向日志
+      await expect(readFile(loginPaths(root, 'xiaohongshu').pid, 'utf8')).rejects.toThrow()  // 无 pid 可写就不写
+    } finally { process.env.PATH = previousPath }
+  })
 })
 
 describe('Whoami', () => {
@@ -295,6 +355,15 @@ describe('Whoami', () => {
     now += 31_000; await whoami.check('xiaohongshu'); expect(calls).toBe(2)   // 缺 avatar → 60s 后重抓
   })
 
+  it('verifies the web_publisher family via whoami --platform', async () => {
+    const cmds: string[][] = []
+    const run: RunCommand = async cmd => { cmds.push(cmd)
+      return { code: 0, stdout: '{"loggedIn": true, "name": "知乎号", "avatar": ""}' } }
+    const whoami = new Whoami({ root, scriptsDir: '/s', runners: runnersOf(), run })
+    await whoami.check('zhihu')
+    expect(cmds[0]!.join(' ')).toContain('web_publisher.py whoami --platform zhihu')
+  })
+
   it('force skips the cache and a single flight dedupes concurrent checks', async () => {
     let started = 0
     const run: RunCommand = async () => {
@@ -305,6 +374,21 @@ describe('Whoami', () => {
     await Promise.all([whoami.check('douyin'), whoami.check('douyin')])
     expect(started).toBe(1)
     await whoami.check('douyin', true); expect(started).toBe(2)
+  })
+
+  it('never boards a force check onto a non-force flight that would settle from the cache', async () => {
+    let started = 0
+    const run: RunCommand = async () => { started++; return { code: 0, stdout: '{"loggedIn": false}' } }
+    const whoami = new Whoami({ root, scriptsDir: '/s', runners: runnersOf(), run })
+    await whoami.check('douyin')                                                  // 先填缓存
+    expect(started).toBe(1)
+    await Promise.all([whoami.check('douyin'), whoami.check('douyin', true)])     // 非 force 命中缓存，force 不得并船
+    expect(started).toBe(2)
+  })
+
+  it('maps a spawn failure (ENOENT) onto a numeric exit code, not the error\'s string code', async () => {
+    const finished = await runReal(['easel-test-no-such-binary'], { cwd: root, timeoutMs: 2000 })
+    expect(finished).toEqual({ code: 1, stdout: '' })
   })
 
   it('treats an unconfident answer as 502, never a false negative, and writes no marker for it', async () => {
@@ -389,15 +473,25 @@ describe('review fixes: scripts dir override', () => {
 })
 
 /** An api mounted on a real HTTP server with a settings upstream naming our temp root (and its own home for profile deletes). */
-async function mounted(over?: { settings?: object | 'dead'; home?: string }): Promise<{ base: string; close(): Promise<void> }> {
+async function mounted(over?: {
+  settings?: object | 'dead' | (() => object | 'dead'); home?: string; spawnLogin?: SpawnLogin; run?: RunCommand
+}): Promise<{ base: string; close(): Promise<void> }> {
   const settings = createServer((req, res) => {
-    if (over?.settings === 'dead') { res.destroy(); return }
+    const view = typeof over?.settings === 'function' ? over.settings() : over?.settings
+    if (view === 'dead') { res.destroy(); return }
+    // The real orchestrator refuses settings without the sidecar header (sameOrigin() in src/app/http.ts).
+    if (req.headers['x-orchestrator-request'] !== '1') {
+      res.writeHead(403, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Same-origin management request required' }))
+      return
+    }
     res.writeHead(200, { 'content-type': 'application/json' })
-    res.end(JSON.stringify(over?.settings ?? { environment: { root, variables: [] } }))
+    res.end(JSON.stringify(view ?? { environment: { root, variables: [] } }))
   })
   await new Promise<void>(r => settings.listen(0, '127.0.0.1', r))
   const upstream = `http://127.0.0.1:${(settings.address() as { port: number }).port}`
-  const api = new AccountsApi({ upstream, scriptsDir: '/s', home: over?.home ?? root })
+  const api = new AccountsApi({ upstream, scriptsDir: '/s', home: over?.home ?? root,
+    spawnLogin: over?.spawnLogin, run: over?.run })
   const server = createServer((req, res) => {
     void api.handle(req, new URL(req.url ?? '/', 'http://127.0.0.1'), res).catch(() => res.destroy())
   })
@@ -413,11 +507,12 @@ const post = (base: string, path: string, body?: unknown): Promise<Response> =>
     body: body === undefined ? undefined : JSON.stringify(body) })
 
 describe('AccountsApi routes', () => {
-  it('lists the four cards with fast-path login state', async () => {
+  it('lists the seven cards with fast-path login state', async () => {
     const { base, close } = await mounted()
     try {
       const cards = await (await fetch(`${base}/api/accounts`)).json() as { platform: string; loggedIn: boolean }[]
-      expect(cards.map(card => card.platform)).toEqual(['xiaohongshu', 'bilibili', 'douyin', 'wechat-oa'])
+      expect(cards.map(card => card.platform)).toEqual(
+        ['xiaohongshu', 'bilibili', 'douyin', 'wechat-oa', 'kuaishou', 'weixin-channels', 'zhihu'])
       expect(cards[0]!.loggedIn).toBe(false)
     } finally { await close() }
   })
@@ -426,7 +521,7 @@ describe('AccountsApi routes', () => {
     const { base, close } = await mounted()
     try {
       expect((await fetch(`${base}/api/login/..%2f..%2fetc/status`)).status).toBe(404)   // Review Focus 1
-      expect((await post(base, '/api/login/kuaishou')).status).toBe(404)
+      expect((await post(base, '/api/login/weibo')).status).toBe(404)                    // 真未知平台（原 kuaishou 哨兵）
       expect((await fetch(`${base}/api/accounts/tail/whoami`)).status).toBe(404)
     } finally { await close() }
   })
@@ -474,6 +569,120 @@ describe('AccountsApi routes', () => {
       expect((await readStatus(paths)).state).toBe('unknown')
       const { stat } = await import('node:fs/promises')
       await expect(stat(profile)).rejects.toThrow()
+    } finally { await close() }
+  })
+
+  it('logout of a web-family platform removes the artifacts and the profile directory', async () => {
+    const paths = loginPaths(root, 'zhihu')
+    await writeMarker(paths, 'success', 'n')
+    const profile = join(root, '.easel-browser-profiles', 'ZhihuProfile')
+    await mkdir(profile, { recursive: true })
+    const { base, close } = await mounted()
+    try {
+      expect((await post(base, '/api/logout/zhihu')).status).toBe(200)
+      expect((await readStatus(paths)).state).toBe('unknown')
+      const { stat } = await import('node:fs/promises')
+      await expect(stat(profile)).rejects.toThrow()
+    } finally { await close() }
+  })
+
+  it('logout of wechat-oa clears both process keys and its credentials', async () => {
+    for (const key of ['wechat-oa', 'wechat-oa-mp'] as const) {
+      const paths = loginPaths(root, key)
+      await mkdir(paths.dir, { recursive: true })
+      await writeFile(paths.status, JSON.stringify({ state: 'success', message: '' }), 'utf8')
+    }
+    const runs: string[][] = []
+    const run: RunCommand = async cmd => { runs.push(cmd); return { code: 0, stdout: '{}' } }
+    const { base, close } = await mounted({ run })
+    try {
+      expect((await post(base, '/api/logout/wechat-oa')).status).toBe(200)
+      expect((await readStatus(loginPaths(root, 'wechat-oa'))).state).toBe('unknown')
+      expect((await readStatus(loginPaths(root, 'wechat-oa-mp'))).state).toBe('unknown')
+      expect(runs.some(cmd => cmd.join(' ').includes("pop('web'"))).toBe(true)   // 凭证随登出清掉（CLEAR_PY）
+    } finally { await close() }
+  })
+
+  it('pins the first execution root for the sidecar\'s lifetime; a migrated workspace needs a restart', async () => {
+    const migrated = await mkdtemp(join(tmpdir(), 'sp2-migrated-'))
+    const settings = { environment: { root, variables: [] } }
+    const { base, close } = await mounted({ settings: () => settings })
+    try {
+      expect((await fetch(`${base}/api/accounts`)).status).toBe(200)               // 首根已钉
+      const paths = loginPaths(migrated, 'xiaohongshu')                  // 二维码只放进迁移后的新根
+      await mkdir(paths.dir, { recursive: true })
+      await writeFile(paths.status, JSON.stringify({ state: 'qr_ready', message: '', qr: '', ts: 1 }), 'utf8')
+      await writeFile(paths.qr, Buffer.from([9, 9, 9]))
+      settings.environment.root = migrated
+      expect((await fetch(`${base}/api/login/xiaohongshu/qr`)).status).toBe(404)   // 不追新根：重建归重启
+    } finally { await close(); await rm(migrated, { recursive: true, force: true }) }
+  })
+
+  it('retries a failed first resolution on the next request instead of staying 503', async () => {
+    let dead = false
+    let hits = 0
+    const settings = { environment: { root, variables: [] } }
+    const { base, close } = await mounted({ settings: () => { hits++; return dead ? 'dead' : settings } })
+    try {
+      dead = true
+      expect((await fetch(`${base}/api/accounts`)).status).toBe(503)               // 从未拿到过根才 503
+      dead = false
+      expect((await fetch(`${base}/api/accounts`)).status).toBe(200)               // 下一班重试成功并钉死
+      expect((await fetch(`${base}/api/accounts`)).status).toBe(200)               // 此后直读钉住的根
+      expect(hits).toBe(2)
+    } finally { await close() }
+  })
+
+  it('shares one settings flight among concurrent first resolutions', async () => {
+    let hits = 0
+    let release: () => void = () => undefined
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const settings = createServer((req, res) => {
+      hits++
+      void gate.then(() => {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ environment: { root, variables: [] } }))
+      })
+    })
+    await new Promise<void>(resolve => settings.listen(0, '127.0.0.1', resolve))
+    const resolver = new ExecutionRoot({ upstream: `http://127.0.0.1:${(settings.address() as { port: number }).port}` })
+    try {
+      const first = resolver.get(), second = resolver.get()       // 首根解析窗口里并发上客：只起一班
+      release()
+      expect(await first).toBe(root)
+      expect(await second).toBe(root)
+      expect(hits).toBe(1)
+    } finally {
+      await new Promise<void>(resolve => settings.close(() => resolve()))
+    }
+  })
+
+  it('shares one failing flight too: concurrent first resolutions reject together, the next request retries', async () => {
+    let hits = 0
+    const settings = createServer((req, res) => { hits++; res.destroy() })
+    await new Promise<void>(resolve => settings.listen(0, '127.0.0.1', resolve))
+    const resolver = new ExecutionRoot({ upstream: `http://127.0.0.1:${(settings.address() as { port: number }).port}` })
+    const refused = (promise: Promise<string>): Promise<AccountError> =>
+      promise.then(() => { throw new Error('expected a 503') }, error => error as AccountError)
+    try {
+      const [first, second] = await Promise.all([refused(resolver.get()), refused(resolver.get())])
+      expect(first.status).toBe(503)                              // 两个 waiter 同一班失败
+      expect(second.status).toBe(503)
+      expect(hits).toBe(1)
+      await refused(resolver.get())                               // 航班已清：下一个请求重试新班
+      expect(hits).toBe(2)
+    } finally {
+      await new Promise<void>(resolve => settings.close(() => resolve()))
+    }
+  })
+
+  it('answers a malformed percent escape with 400 on its own routes, not an internal error', async () => {
+    const { base, close } = await mounted()
+    try {
+      const response = await fetch(`${base}/api/login/%zz`)
+      expect(response.status).toBe(400)
+      const body = await response.json() as { error?: string }
+      expect(body.error).toContain('百分号转义')
     } finally { await close() }
   })
 })

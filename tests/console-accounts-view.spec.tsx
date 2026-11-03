@@ -52,32 +52,45 @@ const tick = async (ms = 1300): Promise<void> => {
   await settle()
 }
 
-/** All four cards plus whoami answers for each, so the page's background verification settles. */
+/** All seven cards plus whoami answers for each, so the page's background verification settles. */
 function serveCards(cards: { platform: string; name: string; backend: string; loggedIn: boolean }[],
   whoami: Record<string, { loggedIn: boolean; name: string; avatar: string }> = {}) {
   api['/api/accounts'] = () => reply(cards)
-  for (const platform of ['xiaohongshu', 'bilibili', 'douyin', 'wechat-oa'])
+  for (const platform of ['xiaohongshu', 'bilibili', 'douyin', 'wechat-oa', 'kuaishou', 'weixin-channels', 'zhihu'])
     api[`/api/accounts/${platform}/whoami`] = () => reply(whoami[platform] ?? { loggedIn: false, name: '', avatar: '' })
 }
 
-const FOUR_CARDS = [
+const SEVEN_CARDS = [
   { platform: 'xiaohongshu', name: '小红书', backend: 'xhs', loggedIn: true },
   { platform: 'bilibili', name: 'B站', backend: 'biliup', loggedIn: false },
   { platform: 'douyin', name: '抖音', backend: 'douyin', loggedIn: false },
   { platform: 'wechat-oa', name: '微信公众号', backend: 'wechat-oa', loggedIn: false },
+  { platform: 'kuaishou', name: '快手', backend: 'web', loggedIn: false },
+  { platform: 'weixin-channels', name: '微信视频号', backend: 'web', loggedIn: false },
+  { platform: 'zhihu', name: '知乎', backend: 'web', loggedIn: false },
 ]
 
 it('renders one card per platform with the fast-path state and whoami names', async () => {
-  serveCards(FOUR_CARDS, { xiaohongshu: { loggedIn: true, name: '小红书昵称', avatar: '' } })
+  serveCards(SEVEN_CARDS, { xiaohongshu: { loggedIn: true, name: '小红书昵称', avatar: '' } })
   await mountConsole()
   await goto('#/accounts')
   expect(all('.console-card-title span:first-child').map(title => title.textContent))
-    .toEqual(['小红书', 'B站', '抖音', '微信公众号'])
-  expect(all('.console-state').map(state => state.textContent)).toEqual([zh['console.loggedIn'], zh['console.loggedOut'],
-    zh['console.loggedOut'], zh['console.loggedOut']])
+    .toEqual(['小红书', 'B站', '抖音', '微信公众号', '快手', '微信视频号', '知乎'])
+  expect(all('.console-state').map(state => state.textContent)).toEqual([zh['console.loggedIn'], ...Array(6).fill(zh['console.loggedOut'])])
   expect(container!.textContent).toContain('小红书昵称')
   // whoami 结果进 localStorage：下次开页秒显
   expect(localStorage.getItem('easel-superagent/accounts-whoami')).toContain('小红书昵称')
+})
+
+it('renders the web family as plain QR cards: no credentials row, no mp button', async () => {
+  serveCards(SEVEN_CARDS.map(card => ({ ...card, loggedIn: false })))
+  await mountConsole()
+  await goto('#/accounts')
+  const zhihu = document.querySelector('.console-card[data-platform="zhihu"]') as HTMLElement
+  expect(zhihu).toBeTruthy()
+  expect(zhihu.textContent).toContain('知乎')
+  expect(zhihu.textContent).not.toContain(zh['console.credentialsConfigure'])   // 凭证行是 wechat-oa 专属（Review Focus 6）
+  expect(zhihu.querySelector('button')!.textContent).toContain(zh['console.login'])
 })
 
 it('shows the offline-root state when every account call answers 503', async () => {   // Review Focus 5
@@ -92,7 +105,7 @@ const cardButton = (platform: string, label: string): HTMLButtonElement =>
   all(`.console-card[data-platform='${platform}'] button`).find(button => button.textContent === label) as HTMLButtonElement
 
 it('runs the login modal through the state machine to success', async () => {
-  serveCards(FOUR_CARDS.map(card => card.platform === 'xiaohongshu' ? card : { ...card, loggedIn: false }))
+  serveCards(SEVEN_CARDS.map(card => card.platform === 'xiaohongshu' ? card : { ...card, loggedIn: false }))
   let phase = 'qr'
   api['/api/login/xiaohongshu'] = () => reply({ state: 'starting', message: '' })
   api['/api/login/xiaohongshu/status'] = () => reply(phase === 'qr'
@@ -109,7 +122,7 @@ it('runs the login modal through the state machine to success', async () => {
 }, 9000)
 
 it('submits an sms code through the douyin wall and validates its shape', async () => {
-  serveCards(FOUR_CARDS.map(card => ({ ...card, loggedIn: false })))
+  serveCards(SEVEN_CARDS.map(card => ({ ...card, loggedIn: false })))
   api['/api/login/douyin'] = () => reply({ state: 'starting', message: '' })
   api['/api/login/douyin/status'] = () => reply({ state: 'sms_required', message: '' })
   api['/api/login/douyin/sms'] = () => reply({ ok: true })
@@ -130,7 +143,7 @@ it('submits an sms code through the douyin wall and validates its shape', async 
 }, 9000)
 
 it('asks before logout and calls the endpoint once confirmed', async () => {
-  serveCards(FOUR_CARDS.map(card => card.platform === 'bilibili' ? { ...card, loggedIn: true } : { ...card, loggedIn: false }),
+  serveCards(SEVEN_CARDS.map(card => card.platform === 'bilibili' ? { ...card, loggedIn: true } : { ...card, loggedIn: false }),
     { bilibili: { loggedIn: true, name: 'B站昵称', avatar: '' } })
   api['/api/logout/bilibili'] = () => reply({ ok: true })
   await mountConsole()
@@ -147,12 +160,14 @@ it('asks before logout and calls the endpoint once confirmed', async () => {
 })
 
 it('opens the credentials modal from the card, saves all four fields, and shows the reply', async () => {
-  serveCards(FOUR_CARDS)
+  serveCards(SEVEN_CARDS)
   api['/api/accounts/wechat-oa/credentials'] = (method) => method === 'GET'
     ? reply({ configured: true, appIdMasked: 'wx12****', name: '主号', author: '阿一' })
     : reply({ ok: true, message: '已保存并验证通过' })
   await mountConsole()
   await goto('#/accounts')
+  // 按钮是动作词：「凭证（发布）」名词不得在按钮上再出现一遍（main 侧断言意图，随合并保留）
+  expect(all(`.console-card[data-platform='wechat-oa'] button`).some(button => button.textContent === zh['console.credentials'])).toBe(false)
   await click(all('.console-card[data-platform="wechat-oa"] button')
     .find(button => button.textContent === zh['console.credentialsConfigure'])!)
   const modal = document.querySelector('.console-modal-card')!
@@ -173,7 +188,7 @@ it('opens the credentials modal from the card, saves all four fields, and shows 
 })
 
 it('keeps the modal open with the error when saving fails', async () => {
-  serveCards(FOUR_CARDS)
+  serveCards(SEVEN_CARDS)
   api['/api/accounts/wechat-oa/credentials'] = (method) => method === 'GET'
     ? reply({ configured: false, appIdMasked: '', name: '', author: '' })
     : reply({ error: 'AppID 无效' }, 400)
@@ -189,7 +204,7 @@ it('keeps the modal open with the error when saving fails', async () => {
 })
 
 it('closes itself after success without cancelling the finished login', async () => {
-  serveCards(FOUR_CARDS.map(card => ({ ...card, loggedIn: false })))
+  serveCards(SEVEN_CARDS.map(card => ({ ...card, loggedIn: false })))
   let phase = 'qr'
   api['/api/login/bilibili'] = () => reply({ state: 'starting', message: '' })
   api['/api/login/bilibili/status'] = () => reply(phase === 'qr'
@@ -206,7 +221,7 @@ it('closes itself after success without cancelling the finished login', async ()
 }, 12000)
 
 it('offers verify to force a fresh whoami check past the cache', async () => {
-  serveCards(FOUR_CARDS, { xiaohongshu: { loggedIn: true, name: '旧名字', avatar: '' } })
+  serveCards(SEVEN_CARDS, { xiaohongshu: { loggedIn: true, name: '旧名字', avatar: '' } })
   let checks = 0
   api['/api/accounts/xiaohongshu/whoami'] = () => {
     checks++
@@ -219,10 +234,31 @@ it('offers verify to force a fresh whoami check past the cache', async () => {
   await click(cardButton('xiaohongshu', zh['console.verify']))
   await settle()
   expect(container!.textContent).toContain('新名字')
+  expect(container!.textContent).not.toContain(zh['console.accountWhoamiFailed'])   // 成功不说失败的话
+})
+
+it('tells the operator an explicit verify could not confirm, leaving the state untouched', async () => {
+  serveCards(SEVEN_CARDS, { xiaohongshu: { loggedIn: true, name: '旧名字', avatar: '' } })
+  let force = false
+  api['/api/accounts/xiaohongshu/whoami'] = () => force
+    ? new Response('{"error":"未能确认当前账号身份，请稍后重试校验"}', { status: 502, headers: { 'content-type': 'application/json' } })
+    : reply({ loggedIn: true, name: '旧名字', avatar: '' })
+  await mountConsole()
+  await goto('#/accounts')
+  force = true
+  await click(cardButton('xiaohongshu', zh['console.verify']))
+  await settle()
+  expect(container!.textContent).toContain(zh['console.accountWhoamiFailed'])
+  expect(container!.textContent).toContain('未能确认当前账号身份')      // 服务端的具体原因拼在词条后
+  expect(container!.textContent).toContain('旧名字')                   // spec §7：状态保持不变，不误报
+  force = false                                                       // 下一次验证成功：失败话术即撤
+  await click(cardButton('xiaohongshu', zh['console.verify']))
+  await settle()
+  expect(container!.textContent).not.toContain(zh['console.accountWhoamiFailed'])
 })
 
 it('closes on Escape during an active login, cancelling it', async () => {
-  serveCards(FOUR_CARDS.map(card => ({ ...card, loggedIn: false })))
+  serveCards(SEVEN_CARDS.map(card => ({ ...card, loggedIn: false })))
   api['/api/login/douyin'] = () => reply({ state: 'starting', message: '' })
   api['/api/login/douyin/status'] = () => reply({ state: 'starting', message: '' })
   await mountConsole()
@@ -237,7 +273,7 @@ it('closes on Escape during an active login, cancelling it', async () => {
 })
 
 it('renders three-part cards: fixed identity row with avatar, actions pinned to the bottom', async () => {
-  serveCards(FOUR_CARDS, { xiaohongshu: { loggedIn: true, name: '小红书昵称', avatar: '' } })
+  serveCards(SEVEN_CARDS, { xiaohongshu: { loggedIn: true, name: '小红书昵称', avatar: '' } })
   await mountConsole()
   await goto('#/accounts')
   // 头像坏/空时退回渐变首字，不出现破图
@@ -252,7 +288,7 @@ it('renders three-part cards: fixed identity row with avatar, actions pinned to 
 })
 
 it('falls back to the gradient initial when the whoami avatar image is broken', async () => {
-  serveCards(FOUR_CARDS, { xiaohongshu: { loggedIn: true, name: '小红书昵称', avatar: 'https://cdn.example.com/me.png' } })
+  serveCards(SEVEN_CARDS, { xiaohongshu: { loggedIn: true, name: '小红书昵称', avatar: 'https://cdn.example.com/me.png' } })
   await mountConsole()
   await goto('#/accounts')
   // 有图先出图：img 在，渐变首字不在
@@ -267,12 +303,12 @@ it('falls back to the gradient initial when the whoami avatar image is broken', 
 })
 
 it('carries a refresh action in the header band that reloads the cards', async () => {
-  serveCards(FOUR_CARDS)
+  serveCards(SEVEN_CARDS)
   await mountConsole()
   await goto('#/accounts')
   expect(document.querySelector('.dt-header-title')?.textContent).toBe(zh['nav.accounts'])
   let asked = 0
-  api['/api/accounts'] = () => { asked += 1; return reply(FOUR_CARDS) }
+  api['/api/accounts'] = () => { asked += 1; return reply(SEVEN_CARDS) }
   await click(document.querySelector('.dt-header-actions button')!)
   expect(asked).toBeGreaterThanOrEqual(1)
 })

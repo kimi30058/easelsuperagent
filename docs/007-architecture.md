@@ -400,11 +400,17 @@ Some generic modules still refer directly to GitHub or Feishu:
 | `src/console/inbox.tsx` | The console inbox: recent Threads of every source with the compose that starts a request, a console Thread's follow-up compose, and `GateActions`, the publish gate's two answers |
 | `src/console/content.tsx` | The console content pages: the calendar's records as recorded, grouped by date, and the workspace's personas and skills |
 | `src/console/login-protocol.ts` | The platform-login file protocol: the platform table and every path and read/write under `outputs/_login`, all explicit per ADR-0007 |
+| `src/console/python.ts` | `pythonBin`, the interpreter the account domain's scripts run on: `EASEL_PYTHON`, then the project venv beside the skill library (`requirements.txt`), then bare python3 |
 | `src/console/login-runner.ts` | `LoginRunners`, the login runners of one sidecar: spawn with every path explicit, pidfile reaping of orphans, per-key serialization, cancel and the shutdown sweep |
 | `src/console/whoami.ts` | `Whoami`, true login verification over the skills' own whoami subcommands: single-flight with a TTL cache, confident-or-502, and the success marker write-back |
 | `src/console/wechat-credentials.ts` | `WechatCredentials`, the official account's AppID/AppSecret in wechat-publisher.yaml, written through python and verified against the token API |
 | `src/console/accounts-api.ts` | `AccountsApi`, the account domain's `/api/*` routes answered by the sidecar itself, with the execution root self-configured from the settings view |
 | `src/console/accounts.tsx` | The accounts page: a card per platform with whoami names, the login modal's whole scan flow, the SMS and credentials forms, and the logout confirm |
+| `src/console/execution-root.ts` | `ExecutionRoot`, the execution-root resolver both sidecar API domains share: the orchestrator's settings view, resolved once single-flight and pinned for the sidecar's lifetime, 503 only while never known |
+| `src/console/publish-protocol.ts` | The publish file protocol: every path and read/write under `outputs/_publish` — douyin's status, the one-shot code and resend sidecars, and the bounded 2KB log tail cut at a UTF-8 character boundary |
+| `src/console/publish-api.ts` | `PublishApi`, the publish domain's `/api/publish/*` routes the sidecar answers itself: the aggregate read and douyin's SMS wall, which accepts a code or a resend signal only while a publish runs and answers malformed escapes 400 |
+| `src/console/publish.tsx` | The publish center: one card per platform over the file protocol, the SMS wall's inline form, a fresh bottom-following log while a publish runs, the load-error retry, and the latest calendar record otherwise |
+| `src/console/publish-view.ts` | The `/api/publish` view type and its liveness predicates, read alike by the publish cards and the login modal's soft hint |
 
 `src/sources/feishu.ts` is also the entry of the Feishu Source plugin, built by `tsdown.config.ts` and exported in `package.json` as `./feishu-watch`. The bundle's `cordis.patch.yml` inserts it, disabled by default.
 
@@ -457,8 +463,10 @@ Some generic modules still refer directly to GitHub or Feishu:
 | `tests/panel-overview.spec.tsx`, `panel-source.spec.tsx`, `panel-trigger.spec.tsx`, `panel-eval.spec.tsx`, `panel-execution.spec.tsx` | Each page of the panel, against a fake management API answered by route |
 | `tests/panel-settings.spec.tsx`, `panel-prompts.spec.tsx`, `panel-deployment.spec.tsx`, `panel-panel.spec.tsx` | The settings groups, drafts and history, the prompts, the Deployment page, and the panel's search, glossary and route memory |
 | `tests/console-shell.spec.tsx` | The console shell: the sidebar over the shared views, hash routing in both directions, the offline bar, and English when the browser asks for it |
-| `tests/console-accounts.spec.ts` | The account domain's node side: the _login file protocol, runner lifecycle with pidfile reaping, whoami confidence and write-back, wechat credentials, and the `/api/*` routes with the self-configured root |
+| `tests/console-accounts.spec.ts` | The account domain's node side: the _login file protocol, runner lifecycle with pidfile reaping, whoami confidence and write-back, wechat credentials, and the `/api/*` routes with the self-configured root, pinned after a single-flight first resolution |
 | `tests/console-accounts-view.spec.tsx` | The accounts page: cards with whoami names and the offline state, the login modal's state machine, the SMS wall's inline validation, the logout confirm, and the credentials form |
+| `tests/console-publish.spec.ts` | The publish domain's node side: the _publish file protocol (tolerant status, bounded 2KB tail cut at a UTF-8 boundary, aggregate) and the /api/publish routes (codes and resend only while publishing, platform and format validation, malformed escapes as 400) |
+| `tests/console-publish-view.spec.tsx` | The publish center: cards with empty states, douyin's SMS form with inline validation, a fresh log as publishing, the latest calendar record by its Chinese name, the login modal's publish hint from a state or a fresh log, and the load-error retry |
 | `tests/console-inbox.spec.tsx`, `tests/console-content.spec.tsx` | The console inbox and content pages: the composes with the message id each retry reuses, the badge of console-born Threads, the Threads of other sources read-only, the publish gate's answers by stage, and the calendar, personas and skills |
 | `tests/console-execution-view.spec.tsx` | The execution page: the header band with the pause action, executor stat tiles, card rows, and the empty state's guidance |
 | `tests/draft.spec.ts`, `tests/prompt-config.spec.ts`, `tests/markdown.spec.ts`, `tests/marks.spec.ts` | Draft states, merges and the save bar's line; the prompt configuration by section and the line diff; the Markdown subset and its links; the mark of every state the views classify |

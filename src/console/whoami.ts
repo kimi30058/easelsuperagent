@@ -4,6 +4,7 @@ import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { AccountError, type LoginRunners } from './login-runner.ts'
+import { pythonBin } from './python.ts'
 import {
   bilibiliCookiePath, loggedInFast, loginPaths, writeMarker, type LoginPlatform, type ProcessKey,
 } from './login-protocol.ts'
@@ -18,31 +19,38 @@ export const runReal: RunCommand = async (cmd, options) => {
       maxBuffer: 1024 * 1024, encoding: 'utf8' })
     return { code: 0, stdout }
   } catch (error) {
-    const failure = error as { killed?: boolean; code?: number; stdout?: string }
+    // execFile 把 OS 错误挂在 error.code 上：超时看 killed，非零退出是数字，spawn 不成（ENOENT）是字符串——
+    // RunCommand 的契约只有 number，字符串一律归一为 1。
+    const failure = error as { killed?: boolean; code?: number | string; stdout?: string }
     if (failure.killed) throw new Error('timed out')
-    return { code: failure.code ?? 1, stdout: failure.stdout ?? '' }
+    return { code: typeof failure.code === 'number' ? failure.code : 1, stdout: failure.stdout ?? '' }
   }
 }
-/** Per-key whoami timeouts, Easel's own values: browsers are slow to come up. */
-const TIMEOUT_MS: Record<ProcessKey, number> = { xiaohongshu: 35_000, douyin: 40_000, 'wechat-oa-mp': 40_000, bilibili: 60_000, 'wechat-oa': 40_000 }
+/** Per-key whoami timeouts, Easel's own values: browsers are slow to come up. verify() 把 wechat-oa 并到
+ *  wechat-oa-mp 的会话上再查表，所以 'wechat-oa' 键永远走不到这里。 */
+const TIMEOUT_MS: Record<Exclude<ProcessKey, 'wechat-oa'>, number> = { xiaohongshu: 35_000, douyin: 40_000, 'wechat-oa-mp': 40_000, bilibili: 60_000, kuaishou: 40_000, 'weixin-channels': 40_000, zhihu: 40_000 }
 const TTL_MS = 600_000
 
 /** Whoami verification over the skills' own whoami subcommands; results heal the fast path and never report a false negative. */
 export class Whoami {
   private readonly cache = new Map<LoginPlatform, { at: number; value: WhoamiResult }>()
-  private readonly inflight = new Map<LoginPlatform, Promise<WhoamiResult>>()
-  private readonly deps: { root: string; scriptsDir: string; runners: LoginRunners; run: RunCommand; wechatConfigured: () => Promise<boolean>; now: () => number }
-  constructor(deps: { root: string; scriptsDir: string; runners: LoginRunners; run?: RunCommand; wechatConfigured?: () => Promise<boolean>; now?: () => number }) {
-    this.deps = { root: deps.root, scriptsDir: deps.scriptsDir, runners: deps.runners, run: deps.run ?? runReal,
+  private readonly inflight = new Map<LoginPlatform, { task: Promise<WhoamiResult>; forced: boolean }>()
+  private readonly deps: { root: string; scriptsDir: string; python: string; runners: LoginRunners; run: RunCommand; wechatConfigured: () => Promise<boolean>; now: () => number }
+  constructor(deps: { root: string; scriptsDir: string; python?: string; runners: LoginRunners; run?: RunCommand; wechatConfigured?: () => Promise<boolean>; now?: () => number }) {
+    this.deps = { root: deps.root, scriptsDir: deps.scriptsDir, python: deps.python ?? pythonBin(deps.scriptsDir), runners: deps.runners, run: deps.run ?? runReal,
       wechatConfigured: deps.wechatConfigured ?? (async () => false), now: deps.now ?? (() => Date.now()) }
   }
-  /** Verify one platform; `force` skips the cache. Concurrent checks share a single flight. */
+  /** Verify one platform; `force` skips the cache. Concurrent checks share a single flight — except that a
+   *  force request never boards a non-force flight: that flight may settle straight from the cache force exists to skip. */
   async check(platform: LoginPlatform, force = false): Promise<WhoamiResult> {
     const running = this.inflight.get(platform)
-    if (running) return running
-    const task = this.verify(platform, force).finally(() => this.inflight.delete(platform))
-    this.inflight.set(platform, task)
-    return task
+    if (running !== undefined && (!force || running.forced)) return running.task
+    // 等面前的非 force 航班落地后再新起一班，且入列在先：后到的请求（含 force）都并上这一班，不会再起浏览器。
+    const gate: Promise<void> = running === undefined ? Promise.resolve() : running.task.then(() => undefined, () => undefined)
+    const task = gate.then(() => this.verify(platform, force))
+    const tracked = task.finally(() => { if (this.inflight.get(platform)?.task === tracked) this.inflight.delete(platform) })
+    this.inflight.set(platform, { task: tracked, forced: force })
+    return tracked
   }
   private async verify(platform: LoginPlatform, force: boolean): Promise<WhoamiResult> {
     const key: ProcessKey = platform === 'wechat-oa' ? 'wechat-oa-mp' : platform
@@ -82,11 +90,14 @@ export class Whoami {
   }
   private command(key: ProcessKey): string[] {
     const script = (name: string) => join(this.deps.scriptsDir, name)
+    const py = this.deps.python
     switch (key) {
-      case 'xiaohongshu': return ['python3', script('xhs_publish.py'), 'whoami', '--no-proxy']
-      case 'douyin': return ['python3', script('douyin_publish.py'), 'whoami', '--no-proxy']
-      case 'bilibili': return ['python3', script('bili_login.py'), 'whoami', '--cookie', bilibiliCookiePath(this.deps.root)]
-      default: return ['python3', script('weixin_mp_stats.py'), 'whoami', '--no-proxy']
+      case 'xiaohongshu': return [py, script('xhs_publish.py'), 'whoami', '--no-proxy']
+      case 'douyin': return [py, script('douyin_publish.py'), 'whoami', '--no-proxy']
+      case 'bilibili': return [py, script('bili_login.py'), 'whoami', '--cookie', bilibiliCookiePath(this.deps.root)]
+      case 'kuaishou': case 'weixin-channels': case 'zhihu':
+        return [py, script('web_publisher.py'), 'whoami', '--platform', key]
+      default: return [py, script('weixin_mp_stats.py'), 'whoami', '--no-proxy']
     }
   }
 }
