@@ -85,6 +85,19 @@ it('shows the personas empty state with guidance while the workspace has none', 
   expect(document.querySelector('.dt-empty-hint')?.textContent).toBe(zh['console.emptyPersonasHint'])
 })
 
+it('keeps malformed known fields in the detail row instead of dropping them', async () => {
+  served.calendar = () => reply({ entries: [
+    { date: '2026-11-02', topic: '主题', title: '备用标题', platforms: 'xhs' },
+  ] })
+  await mountConsole()
+  await goto('#/calendar')
+  expect(all('.console-entry-title').map(title => title.textContent)).toEqual(['主题'])
+  expect(all('.console-entry-platform')).toEqual([])
+  const row = all('.dt-kv')[0]!
+  expect([...row.querySelectorAll('dt')].map(term => term.textContent)).toEqual(['title', 'platforms'])
+  expect([...row.querySelectorAll('dd')].map(value => value.textContent)).toEqual(['备用标题', 'xhs'])
+})
+
 it('shows the empty state with its guidance action while the workspace has none recorded', async () => {
   served.calendar = () => reply({ error: 'No calendar recorded yet' }, 404)
   await mountConsole()

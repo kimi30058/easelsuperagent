@@ -10,14 +10,18 @@ const valueText = (value: unknown): string =>
 
 /** One calendar record as a card row: the platforms bracket the topic up front, every other field follows in its own order; `date` rides the group title. */
 function EntryCard({ entry }: { entry: Record<string, unknown> }): JSX.Element {
-  const topic = entry.topic !== undefined ? entry.topic : entry.title !== undefined ? entry.title : ''
-  const rest = Object.entries(entry).filter(([key]) => !['date', 'topic', 'title', 'platforms'].includes(key))
-  const platforms = Array.isArray(entry.platforms) ? entry.platforms.map(String) : []
+  // The head takes the topic, falling back to the title; whichever of the two it does not take stays a detail field below.
+  const head = entry.topic !== undefined ? 'topic' : entry.title !== undefined ? 'title' : undefined
+  // Platforms bracket the head only as the array the records carry; any other shape of the field stays a detail field too.
+  const bracketed = Array.isArray(entry.platforms)
+  const rest = Object.entries(entry)
+    .filter(([key]) => key !== 'date' && key !== head && !(key === 'platforms' && bracketed))
   return <li className="dt-row console-entry">
     <div className="dt-row-main">
       <div className="dt-row-title console-entry-title">
-        {platforms.map(platform => <span key={platform} className="console-entry-platform">[{platform}]</span>)}
-        <span>{valueText(topic)}</span>
+        {(bracketed ? entry.platforms as unknown[] : []).map(platform => <span key={String(platform)}
+          className="console-entry-platform">[{String(platform)}]</span>)}
+        <span>{valueText(head === undefined ? '' : entry[head])}</span>
       </div>
       <KeyValues rows={rest.map(([key, value]): [string, string] => [key, valueText(value)])} />
     </div>
