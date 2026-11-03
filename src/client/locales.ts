@@ -147,6 +147,8 @@ const TEXT = {
   'console.saveCredentials': ['保存并验证', 'Save and verify'],
   'console.offlineRoot': ['编排器离线，无法定位工作根目录', 'Orchestrator offline: the working root is unknown'],
   'console.accountWhoamiFailed': ['校验未完成，状态保持不变', 'Verification incomplete; the state is unchanged'],
+  'console.accountsIntro': ['平台登录态与凭证；昵称由 whoami 定期校验自愈。', 'Platform login states and credentials; names heal through periodic whoami checks.'],
+  'console.refresh': ['刷新', 'Refresh'],
   'console.offlineBar': ['编排器离线，重试中…', 'Orchestrator offline, retrying…'],
   'console.newThread': ['新请求', 'New request'],
   'console.placeholder': ['向 superagent 下达内容请求…', 'Ask the superagent for content…'],

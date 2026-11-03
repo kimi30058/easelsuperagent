@@ -44,14 +44,19 @@ body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang S
 }
 
 /* Accounts page (SP2): platform cards, state badges, the login modal and its forms; the buttons themselves are the shared Button primitive. */
-.console-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.console-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
 .console-card { display: flex; flex-direction: column; gap: 8px; padding: 16px; border: 0.5px solid var(--dsw-alias-border-l3); border-radius: var(--dt-radius-m); background: var(--dsw-alias-bg-layer-2); }
 .console-card-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: var(--dt-fs-title); line-height: var(--dt-lh-title); font-weight: 600; color: var(--dsw-alias-label-primary); }
+.console-card-identity { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; min-height: 44px; }
+.console-avatar { flex: none; width: 40px; height: 40px; border-radius: 50%; object-fit: cover; }
+.console-avatar-fallback { display: inline-flex; align-items: center; justify-content: center; background: var(--console_gradient); color: var(--dsw-alias-label-primary-foreground); font-size: var(--dt-fs-head); line-height: var(--dt-lh-head); font-weight: 600; }
+.console-card-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--dt-fs-body); line-height: var(--dt-lh-body); font-weight: 500; color: var(--dsw-alias-label-primary); }
 .console-state { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 0 10px; border-radius: 999px; font-size: var(--dt-fs-meta); line-height: var(--dt-lh-meta); white-space: nowrap; }
 .console-state-ok { color: var(--dsw-alias-state-success-primary, #059669); background: var(--dsw-alias-state-success-muted, rgba(5, 150, 105, 0.12)); }
 .console-state-off { color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-interactive-bg-hover); }
 .console-card-note { font-size: var(--dt-fs-meta); line-height: var(--dt-lh-meta); color: var(--dsw-alias-label-secondary); }
 .console-card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; }
+.console-card-actions > .dt-btn { flex: 1 1 0; }
 .console-modal { position: fixed; inset: 0; z-index: 1100; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.45); }
 .console-modal-card { display: flex; flex-direction: column; gap: 12px; width: min(400px, 92vw); max-height: 90vh; overflow: auto; padding: 20px; border-radius: var(--dt-radius-l); background: var(--dsw-alias-bg-layer-2); }
 .console-modal-card h2 { margin: 0; font-size: var(--dt-fs-head); line-height: var(--dt-lh-head); color: var(--dsw-alias-label-primary); }

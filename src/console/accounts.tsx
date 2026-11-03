@@ -1,8 +1,9 @@
 /** The accounts page: one card per platform with live state and whoami names, plus the login modal and its forms. */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Button } from '../client/controls.tsx'
+import { Button, Icon } from '../client/controls.tsx'
 import { usePanel } from '../client/provider.tsx'
 import type { T } from '../client/text.ts'
+import { PageHeader } from '../client/widgets.tsx'
 
 export interface AccountCard { platform: string; name: string; backend: string; note: string; loggedIn: boolean }
 export interface WhoamiView { loggedIn: boolean; name: string; avatar: string }
@@ -48,6 +49,7 @@ export function AccountsPage(): JSX.Element {
   const [whoami, setWhoami] = useState<Record<string, WhoamiView>>(() => readWhoamiCache())
   const [loginFor, setLoginFor] = useState<{ key: string; name: string } | undefined>()
   const [confirmLogout, setConfirmLogout] = useState<string | undefined>()
+  const [verifyNote, setVerifyNote] = useState<Record<string, string>>({})
   const alive = useRef(true)
   useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
   const load = useCallback(async () => {
@@ -66,6 +68,9 @@ export function AccountsPage(): JSX.Element {
           writeWhoamiCache(next)
           return next
         })
+        // 自愈成功时顺手撤掉验证失败的提示：新的昵称就在眼前，旧失败话术不该并排挂着。
+        setVerifyNote(previous => previous[card.platform] !== undefined && previous[card.platform] !== ''
+          ? { ...previous, [card.platform]: '' } : previous)
       }).catch(() => undefined)  // 502/504：卡片保持原状态，不弹错（spec §7）
     }
   }, [cards])
@@ -75,6 +80,7 @@ export function AccountsPage(): JSX.Element {
     await load()
   }, [load])
   const verify = useCallback(async (platform: string) => {
+    setVerifyNote(previous => ({ ...previous, [platform]: '' }))
     try {
       const result = await accountsFetch<WhoamiView>(`/accounts/${platform}/whoami?force=1`)
       setWhoami(previous => {
@@ -82,33 +88,54 @@ export function AccountsPage(): JSX.Element {
         writeWhoamiCache(next)
         return next
       })
-    } catch { /* 502/504：状态保持不变（spec §7） */ }
-  }, [])
+    } catch (error) {
+      // 502/504：状态保持不变（spec §7）——但这是显式点过的「验证」，要说一声为什么没动静；
+      // 服务端的话术（如 409 的「请稍后重试校验」）比笼统词条更有行动价值，拼在词条后面。
+      const reason = error instanceof Error && error.message !== ''
+        ? `${t('console.accountWhoamiFailed')}：${error.message}` : t('console.accountWhoamiFailed')
+      setVerifyNote(previous => ({ ...previous, [platform]: reason }))
+    }
+  }, [t])
   const closeLogin = useCallback((): void => { setLoginFor(undefined); void load() }, [load])
   if (offline) return <p className="dt-error" role="alert">{t('console.offlineRoot')}</p>
   if (cards === undefined) return <p className="dt-hint">{t('loading')}</p>
-  return <div className="console-cards">
-    {cards.map(card => <AccountCardView key={card.platform} card={card} whoami={whoami[card.platform]}
-      onLogin={card.backend === 'wechat-oa' ? () => setLoginFor({ key: 'wechat-oa-mp', name: t('console.mpSession') })
-        : () => setLoginFor({ key: card.platform, name: card.name })}
-      onVerify={() => { void verify(card.platform) }}
-      onLogout={() => setConfirmLogout(card.platform)} />)}
-    {loginFor !== undefined && <LoginModal platform={loginFor.key} name={loginFor.name} onClose={closeLogin} />}
-    {confirmLogout !== undefined && <div className="console-modal" role="dialog" aria-modal="true">
-      <div className="console-modal-card">
-        <p>{t('console.logoutConfirm')}</p>
-        <div className="console-card-actions">
-          <Button variant="ghost" onClick={() => setConfirmLogout(undefined)}>{t('cancel')}</Button>
-          <Button variant="ghost" className="console-danger" onClick={() => { void logout(confirmLogout) }}>{t('confirm')}</Button>
+  return <>
+    <PageHeader title={t('nav.accounts')} hint={t('console.accountsIntro')}
+      actions={<Button variant="ghost" icon={<Icon name="refresh" size={14} />}
+        onClick={() => { void load() }}>{t('console.refresh')}</Button>} />
+    <div className="console-cards">
+      {cards.map(card => <AccountCardView key={card.platform} card={card} whoami={whoami[card.platform]}
+        verifyNote={verifyNote[card.platform] ?? ''}
+        onLogin={card.backend === 'wechat-oa' ? () => setLoginFor({ key: 'wechat-oa-mp', name: t('console.mpSession') })
+          : () => setLoginFor({ key: card.platform, name: card.name })}
+        onVerify={() => { void verify(card.platform) }}
+        onLogout={() => setConfirmLogout(card.platform)} />)}
+      {loginFor !== undefined && <LoginModal platform={loginFor.key} name={loginFor.name} onClose={closeLogin} />}
+      {confirmLogout !== undefined && <div className="console-modal" role="dialog" aria-modal="true">
+        <div className="console-modal-card">
+          <p>{t('console.logoutConfirm')}</p>
+          <div className="console-card-actions">
+            <Button variant="ghost" onClick={() => setConfirmLogout(undefined)}>{t('cancel')}</Button>
+            <Button variant="ghost" className="console-danger" onClick={() => { void logout(confirmLogout) }}>{t('confirm')}</Button>
+          </div>
         </div>
-      </div>
-    </div>}
-  </div>
+      </div>}
+    </div>
+  </>
 }
 
-/** One platform's card: state badge (announced atomically), the whoami name, and its actions. */
-function AccountCardView({ card, whoami, onLogin, onVerify, onLogout }: {
-  card: AccountCard; whoami?: WhoamiView; onLogin(): void; onVerify(): void; onLogout(): void
+/** The account's avatar as whoami saw it, or its initial on the brand gradient when the image is missing or broken. */
+function Avatar({ name, src }: { name: string; src: string }): JSX.Element {
+  const [broken, setBroken] = useState(false)
+  const initial = name.trim().charAt(0).toUpperCase() || '?'
+  return src !== '' && !broken
+    ? <img className="console-avatar" src={src} alt="" onError={() => setBroken(true)} />
+    : <span className="console-avatar console-avatar-fallback" aria-hidden="true">{initial}</span>
+}
+
+/** One platform's card: the state badge up top, a fixed-height identity row in the middle, actions pinned to the bottom. */
+function AccountCardView({ card, whoami, verifyNote, onLogin, onVerify, onLogout }: {
+  card: AccountCard; whoami?: WhoamiView; verifyNote: string; onLogin(): void; onVerify(): void; onLogout(): void
 }): JSX.Element {
   const { t } = usePanel()
   // whoami 真校验先于 fast path 显示（Easel 语义：真值覆盖可能过期的标记）；未返回前显示 fast path。
@@ -118,15 +145,21 @@ function AccountCardView({ card, whoami, onLogin, onVerify, onLogout }: {
       <span className={`console-state ${loggedIn ? 'console-state-ok' : 'console-state-off'}`}
         role="status" aria-atomic="true">{loggedIn ? t('console.loggedIn') : t('console.loggedOut')}</span>
     </div>
-    <div className="console-card-note">{whoami?.name || card.note}</div>
-    {card.backend === 'wechat-oa' && <CredentialsRow />}
+    <div className="console-card-identity">
+      {loggedIn
+        ? <><Avatar name={whoami?.name ?? ''} src={whoami?.avatar ?? ''} />
+          <span className="console-card-name">{whoami?.name || card.note}</span></>
+        : <span className="console-card-note">{card.note}</span>}
+      {card.backend === 'wechat-oa' && <CredentialsRow />}
+    </div>
     <div className="console-card-actions">
-      {!loggedIn && <Button variant="outline" onClick={onLogin}>
+      {!loggedIn && <Button variant="primary" onClick={onLogin}>
         {card.backend === 'wechat-oa' ? t('console.mpLogin') : t('console.login')}
       </Button>}
-      {loggedIn && <Button variant="ghost" onClick={onVerify}>{t('console.verify')}</Button>}
+      {loggedIn && <Button variant="outline" onClick={onVerify}>{t('console.verify')}</Button>}
       {loggedIn && <Button variant="ghost" onClick={onLogout}>{t('console.logout')}</Button>}
     </div>
+    {verifyNote !== '' && <p className="console-card-note" role="status">{verifyNote}</p>}
   </div>
 }
 

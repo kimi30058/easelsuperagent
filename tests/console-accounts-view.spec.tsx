@@ -217,3 +217,29 @@ it('closes on Escape during an active login, cancelling it', async () => {
   expect(container!.querySelector('.console-modal')).toBeNull()
   expect(posted.filter(call => call.path === '/api/login/douyin').map(call => call.method)).toEqual(['POST', 'DELETE'])
 })
+
+it('renders three-part cards: fixed identity row with avatar, actions pinned to the bottom', async () => {
+  serveCards(FOUR_CARDS, { xiaohongshu: { loggedIn: true, name: '小红书昵称', avatar: '' } })
+  await mountConsole()
+  await goto('#/accounts')
+  // 头像坏/空时退回渐变首字，不出现破图
+  const fallback = document.querySelector('.console-card[data-platform="xiaohongshu"] .console-avatar-fallback')
+  expect(fallback?.textContent).toBe('小')
+  expect(document.querySelector('.console-card[data-platform="xiaohongshu"] .console-card-name')?.textContent).toBe('小红书昵称')
+  // 未登录卡：整宽主按钮；已登录卡：两个 flex:1 按钮
+  const loggedOut = document.querySelector('.console-card[data-platform="bilibili"] .console-card-actions')!
+  expect([...loggedOut.querySelectorAll('button')].map(button => button.textContent)).toEqual([zh['console.login']])
+  const loggedIn = document.querySelector('.console-card[data-platform="xiaohongshu"] .console-card-actions')!
+  expect([...loggedIn.querySelectorAll('button')].map(button => button.textContent)).toEqual([zh['console.verify'], zh['console.logout']])
+})
+
+it('carries a refresh action in the header band that reloads the cards', async () => {
+  serveCards(FOUR_CARDS)
+  await mountConsole()
+  await goto('#/accounts')
+  expect(document.querySelector('.dt-header-title')?.textContent).toBe(zh['nav.accounts'])
+  let asked = 0
+  api['/api/accounts'] = () => { asked += 1; return reply(FOUR_CARDS) }
+  await click(document.querySelector('.dt-header-actions button')!)
+  expect(asked).toBeGreaterThanOrEqual(1)
+})
