@@ -233,6 +233,21 @@ it('renders three-part cards: fixed identity row with avatar, actions pinned to 
   expect([...loggedIn.querySelectorAll('button')].map(button => button.textContent)).toEqual([zh['console.verify'], zh['console.logout']])
 })
 
+it('falls back to the gradient initial when the whoami avatar image is broken', async () => {
+  serveCards(FOUR_CARDS, { xiaohongshu: { loggedIn: true, name: '小红书昵称', avatar: 'https://cdn.example.com/me.png' } })
+  await mountConsole()
+  await goto('#/accounts')
+  // 有图先出图：img 在，渐变首字不在
+  const image = document.querySelector('.console-card[data-platform="xiaohongshu"] img.console-avatar') as HTMLImageElement
+  expect(image.getAttribute('src')).toBe('https://cdn.example.com/me.png')
+  expect(document.querySelector('.console-card[data-platform="xiaohongshu"] .console-avatar-fallback')).toBeNull()
+  // jsdom 不加载图片、不自己报 error——破图要手工派发
+  await act(async () => { image.dispatchEvent(new ErrorEvent('error')) })
+  await settle()
+  const fallback = document.querySelector('.console-card[data-platform="xiaohongshu"] .console-avatar-fallback')
+  expect(fallback?.textContent).toBe('小')
+})
+
 it('carries a refresh action in the header band that reloads the cards', async () => {
   serveCards(FOUR_CARDS)
   await mountConsole()

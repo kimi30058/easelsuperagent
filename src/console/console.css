@@ -49,7 +49,7 @@ body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang S
 .console-card-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: var(--dt-fs-title); line-height: var(--dt-lh-title); font-weight: 600; color: var(--dsw-alias-label-primary); }
 .console-card-identity { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; min-height: 44px; }
 .console-avatar { flex: none; width: 40px; height: 40px; border-radius: 50%; object-fit: cover; }
-.console-avatar-fallback { display: inline-flex; align-items: center; justify-content: center; background: var(--console_gradient); color: var(--dsw-alias-label-primary-foreground); font-size: var(--dt-fs-head); line-height: var(--dt-lh-head); font-weight: 600; }
+.console-avatar-fallback { display: inline-flex; align-items: center; justify-content: center; background: var(--console-gradient); color: var(--dsw-alias-label-primary-foreground); font-size: var(--dt-fs-head); line-height: var(--dt-lh-head); font-weight: 600; }
 .console-card-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--dt-fs-body); line-height: var(--dt-lh-body); font-weight: 500; color: var(--dsw-alias-label-primary); }
 .console-state { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 0 10px; border-radius: 999px; font-size: var(--dt-fs-meta); line-height: var(--dt-lh-meta); white-space: nowrap; }
 .console-state-ok { color: var(--dsw-alias-state-success-primary, #059669); background: var(--dsw-alias-state-success-muted, rgba(5, 150, 105, 0.12)); }
