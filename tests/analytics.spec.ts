@@ -7,6 +7,8 @@ import {
   CALENDAR_NAME, joinWorks, jsonlPath, lastJsonObject, latestPath,
   readCalendarRecords, readLatest, readSpark, writeLatest,
 } from '../src/console/analytics-protocol.ts'
+import { AnalyticsRunners, analyticsCommand, type FetchHandle } from '../src/console/analytics-runner.ts'
+import { loginPaths, writeMarker } from '../src/console/login-protocol.ts'
 
 let root = ''
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'sp4-protocol-')) })
@@ -91,5 +93,105 @@ describe('works join', () => {
     ] as never, {} as never, now)
     expect(works.map(work => work.title)).toEqual(['没对上的新作'])   // 旧作出窗不列；映射不到的记录跳过（Review Focus 3）
     expect(works.every(work => work.stat === '')).toBe(true)
+  })
+})
+
+/** 等队列的微任务链与 writeLatest 的 fs 落盘走完再断言（exit 只点亮 Promise，finish 链在其后）。 */
+const settle = (ms = 15): Promise<void> => new Promise(resolve => setTimeout(resolve, ms))
+
+describe('analytics command', () => {
+  it('runs the three backends with explicit paths (ADR-0007)', () => {
+    const deps = { root, scriptsDir: '/skills/easel/shared/scripts', python: '/py' }
+    expect(analyticsCommand(deps, 'kuaishou')).toEqual([
+      '/py', '/skills/easel/shared/scripts/account_stats.py', 'fetch', '--platform', 'kuaishou'])
+    expect(analyticsCommand(deps, 'bilibili')).toEqual([
+      '/py', '/skills/easel/shared/scripts/bili_login.py', 'stats',
+      '--cookie', join(root, 'outputs', '_login', 'bilibili-cookies.json')])
+    expect(analyticsCommand(deps, 'wechat-oa')).toEqual([
+      '/py', '/skills/easel/shared/scripts/weixin_mp_stats.py', 'stats', '--count', '20'])
+  })
+})
+
+describe('AnalyticsRunners queue', () => {
+  /** 手柄工厂：exit() 由测试控，kill 只记录——队列推进只认 exited。 */
+  const manual = (stdout = '{"followers": 10}'): { handle: FetchHandle; exit: (code: number | null) => void; kills: string[] } => {
+    let resolveExit: (code: number | null) => void = () => {}
+    const exited = new Promise<number | null>(code => { resolveExit = code })
+    const kills: string[] = []
+    const handle: FetchHandle = { pid: 4321, exited, stdout: Promise.resolve(stdout),
+      kill: signal => { kills.push(signal ?? 'SIGTERM') } }
+    return { handle, exit: resolveExit, kills }
+  }
+  const make = (spawn: () => FetchHandle): AnalyticsRunners =>
+    new AnalyticsRunners({ root, scriptsDir: '/skills', spawn: () => spawn() })
+
+  it('runs platforms serially, persists the last JSON line, and keeps the batch progress', async () => {
+    const first = manual('{"followers": 100}'); const second = manual('{"followers": 200}')
+    let spawns = 0
+    const runners = make(() => { spawns++; return spawns === 1 ? first.handle : second.handle })
+    await runners.enqueue('xiaohongshu'); await runners.enqueue('douyin')
+    expect(runners.stateOf('douyin')).toBe('queued')
+    expect(runners.progress()).toEqual({ done: 0, total: 2 })
+    await first.exit(0); await settle()
+    expect(await readLatest(root, 'xiaohongshu')).toMatchObject({ followers: 100 })   // stdout 末行已落盘
+    expect(runners.progress()).toEqual({ done: 1, total: 2 })
+    await second.exit(1); await settle()                                               // 非零退出 → failed，不写 latest
+    expect(runners.stateOf('douyin')).toBe('failed')
+    expect(await readLatest(root, 'douyin')).toBeUndefined()
+    expect(spawns).toBe(2)                                                             // 串行：第二个在第一个退出后才起
+    expect(runners.progress()).toEqual({ done: 0, total: 0 })                         // 批次收清
+  })
+
+  it('escalates a hung fetch to SIGKILL and the queue moves on (Review Focus 4)', async () => {
+    const hung = manual(); const next = manual()
+    let spawns = 0
+    const quick = new AnalyticsRunners({ root, scriptsDir: '/skills', timeouts: { xiaohongshu: 20, douyin: 20 },
+      terminateWindowMs: 10, spawn: () => { spawns++; return spawns === 1 ? hung.handle : next.handle } })
+    await quick.enqueue('xiaohongshu'); await quick.enqueue('douyin')
+    await settle(80)                                                                   // 超时 20ms + 升级窗 10ms 内已 kill
+    expect(hung.kills).toContain('SIGTERM'); expect(hung.kills).toContain('SIGKILL')
+    await hung.exit(null); await settle()                                              // SIGKILL 后 exit 到达（signal → null）
+    expect(quick.stateOf('xiaohongshu')).toBe('failed')                                // 超时 → failed
+    await next.exit(0); await settle()
+    expect(quick.stateOf('douyin')).toBe('idle')                                       // 队列照常推进
+  })
+
+  it('marks a spawn failure (no pid) failed and keeps the queue going (Review Focus 5)', async () => {
+    const good = manual()
+    let first = true
+    const runners = make(() => {
+      if (first) { first = false; return { pid: 0, exited: Promise.resolve(null),
+        stdout: Promise.resolve(''), kill: () => undefined } }   // 真实 spawn 失败：exited=null，stdout 永不 reject 只给空串
+      return good.handle
+    })
+    await runners.enqueue('zhihu'); await runners.enqueue('kuaishou')
+    await good.exit(0); await settle()
+    expect(runners.stateOf('zhihu')).toBe('failed')
+    expect(runners.stateOf('kuaishou')).toBe('idle')
+  })
+
+  it('enqueue is idempotent while queued or fetching', async () => {
+    const only = manual()
+    const runners = make(() => only.handle)
+    expect(await runners.enqueue('xiaohongshu')).toBe(true)
+    expect(await runners.enqueue('xiaohongshu')).toBe(false)                           // 采集中重复请求不重起
+    await only.exit(0); await settle()                                                 // 等 writeLatest 落完，别让 afterEach 的 rm 撞上
+  })
+
+  it('enqueueLoggedIn and catchUp only touch logged-in, stale platforms', async () => {
+    await writeMarker(loginPaths(root, 'xiaohongshu'), 'success', '已登录')             // 已登录
+    await writeLatest(root, 'xiaohongshu', { followers: 1 })                           // 且刚采过（新鲜）
+    await writeMarker(loginPaths(root, 'douyin'), 'success', '已登录')                 // 已登录但从未采集 → 过期
+    const flights: ReturnType<typeof manual>[] = []
+    const runners = new AnalyticsRunners({ root, scriptsDir: '/skills', staleMs: 20 * 3600_000,
+      spawn: () => { const flight = manual(); flights.push(flight); return flight.handle } })
+    expect(await runners.enqueueLoggedIn()).toBe(2)                                    // xhs + douyin（其余未登录）
+    for (const flight of flights.slice()) await flight.exit(0)
+    await settle()
+    // catchUp：把 xhs 的 latest 拨回 21h 前 → 下次 catchUp 只补它（douyin 刚采过仍新鲜）
+    const back = new Date(Date.now() - 21 * 3600_000)
+    await utimes(latestPath(root, 'xiaohongshu'), back, back)
+    expect(await runners.catchUp()).toBe(1)
+    for (const flight of flights.slice()) await flight.exit(0)                         // 收尾：catchUp 起的航班也落停
   })
 })
