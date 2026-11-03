@@ -26,7 +26,7 @@ it('keeps a person\'s own value where another save changed the same setting, and
 it('saves the Eval block on the Policy settings and the Executor with its execution environment on the Execution settings, each against its own revision', async () => {
   await mount()
   await click(zh['tab.eval'])
-  await click(find(zh['tab.settings'], '.dt-status-head button'))
+  await click(find(zh['tab.settings'], '.dt-header button'))
   await click(zh['mode.auto'])
   await type(field<HTMLInputElement>(zh.evalTimeout), '180')
   const [provider, model] = all('.dt-model input')
@@ -67,7 +67,7 @@ it('loads configuration history on demand with localized changes, Source field l
       part: true }, { code: 'sourceField', source: 'feishu', field: 'syncChat', from: '', to: 'oc_team', part: true }] }] }
   await mount()
   await click(zh['tab.eval'])
-  await click(find(zh['tab.settings'], '.dt-status-head button'))
+  await click(find(zh['tab.settings'], '.dt-header button'))
   expect(server.requests.some(request => request.path === 'policy/history')).toBe(false)
   await click(zh.configHistory)
   for (const expected of ['第 3 次保存 · 从群同步', '生成策略版本 abcdef12', '接单模式：关闭 → 仅观察', '飞书 · 能发起工作的飞书用户 新增：Bob', '飞书 · 同步来源群：未设置 → oc_team',
@@ -132,13 +132,12 @@ it('lists the settings groups stages first, opens each stage\'s group from its s
   expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['term.source'])
   for (const [tab, group] of [['来源', '来源'], ['评估', '评估'], ['执行', '执行']] as const) {
     await click(find(tab, '[role="tab"]'))
-    // The execution page carries its settings entry in the new header band; the other status pages still open from StatusHead.
-    await click(find(zh['tab.settings'], '.dt-status-head button, .dt-header button'))
+    await click(find(zh['tab.settings'], '.dt-header button'))
     expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(group)
   }
-  // The Trigger stage has no settings, so its status offers none.
+  // The Trigger stage has no settings, so its page header offers none.
   await click(tab(zh['tab.trigger']))
-  expect(all('.dt-status-head button').map(button => button.textContent)).not.toContain(zh['tab.settings'])
+  expect(all('.dt-header button').map(button => button.textContent)).not.toContain(zh['tab.settings'])
   await click(tab(zh['tab.settings']))
   expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['promptPart.runtime/work'])
   await click(tab(zh['tab.trigger']))

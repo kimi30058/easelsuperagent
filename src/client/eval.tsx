@@ -7,10 +7,11 @@ import { DECISION_FILTERS, DECISION_KINDS, usePoll, type DecisionFilter, type Se
 import { Button, DisclosureRow, Icon, InfoTip, Input, Pill, SegmentedControl, Switch } from './controls.tsx'
 import { SaveBar } from './draft.tsx'
 import { useAction, usePanel } from './provider.tsx'
+import { settingsRoute } from './route.ts'
 import { DecisionLine } from './rows.tsx'
 import { ConfigHistory, Field, Fields, ModelField, SourceField, numberOf, useBlockDraft, useSettings } from './settings-kit.tsx'
 import { localized, valueLabel, when } from './text.ts'
-import { Hint, LabelValue, LoadMore, LoadState, Section, StatusHead } from './widgets.tsx'
+import { Hint, LabelValue, LoadMore, LoadState, PageHeader, Section } from './widgets.tsx'
 
 export function EvalStatus({ filter, window, paused }: { filter: DecisionFilter; window: '24h' | undefined; paused: boolean }) {
   const { t, call, navigate } = usePanel()
@@ -20,7 +21,8 @@ export function EvalStatus({ filter, window, paused }: { filter: DecisionFilter;
   const show = (key: DecisionFilter, last24h: boolean) => navigate({ page: 'eval', query: { ...key === 'work' ? {} : { filter: key },
     ...last24h ? { window: '24h' } : {} } }, true)
   return <>
-    <StatusHead hint={t('evalStatusIntro')} settings="eval" />
+    <PageHeader title={t('tab.eval')} hint={t('evalStatusIntro')} actions={<Button variant="ghost" size="sm"
+      icon={<Icon name="settings" size={14} />} onClick={() => navigate(settingsRoute('eval'))}>{t('tab.settings')}</Button>} />
     {paused && <p className="dt-banner">
       {t('evalRecordsPaused')} <button type="button" className="dt-textlink"
         onClick={() => navigate({ page: 'execution' })}>{t('resumeWhere')}</button>

@@ -5,7 +5,7 @@ import { usePoll } from './api.ts'
 import { Pill } from './controls.tsx'
 import { usePanel } from './provider.tsx'
 import { ThreadLine } from './rows.tsx'
-import { Hint, LoadMore, LoadState, StatusHead } from './widgets.tsx'
+import { Hint, LoadMore, LoadState, PageHeader } from './widgets.tsx'
 
 export function TriggerStatus({ filter }: { filter: ThreadFilter }) {
   const { t, call, navigate } = usePanel()
@@ -14,7 +14,7 @@ export function TriggerStatus({ filter }: { filter: ThreadFilter }) {
   const go = (next: ThreadFilter) => { setLimit(20); navigate({ page: 'trigger', query: next !== 'subscribed' ? { filter: next } : {} },
     true) }
   return <>
-    <StatusHead hint={t('triggerIntro')} />
+    <PageHeader title={t('tab.trigger')} hint={t('triggerIntro')} />
     <div className="dt-filters">
       {THREAD_FILTERS.map(value => <Pill key={value} active={filter === value}
         onClick={() => go(value)}>{t(`threadFilter.${value}`)}</Pill>)}
