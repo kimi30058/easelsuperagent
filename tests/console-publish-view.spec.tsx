@@ -156,3 +156,28 @@ it('warns inside the login modal while a publish runs', async () => {
   await click(document.querySelector('.console-card[data-platform="douyin"] button')!)
   expect(document.querySelector('.console-modal')!.textContent).toContain('发布进行中，登录可能失败')
 })
+
+it('warns in the login modal from a fresh log alone — xhs and bili have no state file', async () => {
+  api['/api/publish'] = () => reply([
+    { platform: 'xiaohongshu', state: 'unknown', message: '', logTail: 'uploading…', logMtime: Date.now() - 30_000 },
+    { platform: 'bilibili', state: 'unknown', message: '', logTail: '', logMtime: undefined },
+    { platform: 'douyin', state: 'unknown', message: '', logTail: '', logMtime: undefined },
+    { platform: 'wechat-oa', state: 'unknown', message: '', logTail: '', logMtime: undefined },
+  ])
+  api['/api/accounts'] = () => reply([
+    { platform: 'xiaohongshu', name: '小红书', backend: 'xiaohongshu', note: '', loggedIn: false },
+  ])
+  await mountConsole(); await goto('#/accounts')
+  await click(document.querySelector('.console-card[data-platform="xiaohongshu"] button')!)
+  expect(document.querySelector('.console-modal')!.textContent).toContain('发布进行中，登录可能失败')
+})
+
+it('shows a load error with a retry instead of loading forever when /api/publish fails', async () => {
+  api['/api/publish'] = () => reply({ error: '发布服务内部错误' }, 500)
+  await mountConsole(); await goto('#/publish')
+  expect(document.querySelector('.dt-error')!.textContent).toContain('发布状态加载失败')
+  api['/api/publish'] = () => reply(aggregate({ state: 'unknown' }))
+  await click(document.querySelector('.dt-error button')!)
+  expect(all('.console-card')).toHaveLength(4)
+  expect(document.querySelector('.dt-error')).toBeNull()
+})

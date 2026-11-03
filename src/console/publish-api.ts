@@ -9,7 +9,7 @@ import {
 } from './publish-protocol.ts'
 import type { ExecutionRoot } from './execution-root.ts'
 
-/** 码只在进行中的发布里接受：抖音状态机非终态才可写 .code，防止陈码留进下一场发布。 */
+/** 码与重发信号只在进行中的发布里接受：抖音状态机非终态才可写，防止陈码或旧信号留进下一场发布。 */
 const assertPublishing = async (root: string, platform: LoginPlatform): Promise<void> => {
   if (!isSmsPublishPlatform(platform)) throw new AccountError(400, '该平台发布无需验证码')
   const state = await readPublishState(publishPaths(root, platform))
@@ -21,9 +21,13 @@ const assertPublishing = async (root: string, platform: LoginPlatform): Promise<
 export class PublishApi {
   private readonly rootResolver: ExecutionRoot
   constructor(deps: { root: ExecutionRoot }) { this.rootResolver = deps.root }
-  /** Claim and answer one request when it falls under /api/publish*; false lets the caller carry on. */
+  /** Claim and answer one request when it falls under /api/publish* — plus a 400 for any /api/* path whose
+   *  escape is malformed, as this handler runs first; false lets the caller carry on. */
   async handle(req: IncomingMessage, url: URL, res: ServerResponse): Promise<boolean> {
-    const parts = url.pathname.slice('/api/'.length).split('/').map(decodeURIComponent)
+    // 畸形 %-序列是客户端错误，不是断连：decode 放在 try 外会让 URIError 冲进 server.ts 的兜底而毁掉连接。
+    let parts: string[]
+    try { parts = url.pathname.slice('/api/'.length).split('/').map(decodeURIComponent) }
+    catch { reply(res, 400, { error: '路径包含非法的百分号转义' }); return true }
     if (parts[0] !== 'publish') return false
     try { await this.route(req, parts, res) }
     catch (error) { this.fail(res, error) }
@@ -39,8 +43,9 @@ export class PublishApi {
     if (!isPlatform(platform)) throw new AccountError(404, '未知平台或路径')
     if (action === 'sms' && method === 'POST' && parts.length === 3) return this.submitSms(req, res, platform)
     if (action === 'resend' && method === 'POST' && parts.length === 3) {
-      if (!isSmsPublishPlatform(platform)) throw new AccountError(400, '该平台发布无需验证码')
-      await touchResend(publishPaths(await this.rootResolver.get(), platform))
+      const root = await this.rootResolver.get()
+      await assertPublishing(root, platform)
+      await touchResend(publishPaths(root, platform))
       return reply(res, 200, { ok: true })
     }
     throw new AccountError(404, '未知平台或路径')

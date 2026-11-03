@@ -38,6 +38,17 @@ describe('publish file protocol', () => {
     expect(await readLogTail(publishPaths(root, 'bilibili'))).toBeUndefined()
   })
 
+  it('drops a UTF-8 character cut by the 2KB boundary instead of decoding garbage at the head', async () => {
+    const paths = publishPaths(root, 'douyin')
+    await mkdir(paths.dir, { recursive: true })
+    // 「中」占 3 字节（1025–1027）：2KB 窗口从 1026 起，正落在它的中间——续字节被跳过，整字符丢弃。
+    await writeFile(paths.log, `${'a'.repeat(1025)}中${'b'.repeat(2046)}`, 'utf8')
+    const log = await readLogTail(paths)
+    expect(log).toBeDefined()
+    expect(log!.tail).toBe('b'.repeat(2046))
+    expect(log!.tail.includes('�')).toBe(false)
+  })
+
   it('aggregates all four platforms, douyin live and the rest quiet', async () => {
     const paths = publishPaths(root, 'douyin')
     await mkdir(paths.dir, { recursive: true })
@@ -120,15 +131,25 @@ describe('PublishApi routes', () => {
     expect(malformed.status).toBe(400)
   })
 
-  it('touches the resend sidecar and 404s unknown platforms', async () => {
+  it('touches the resend sidecar only while a publish runs, and 404s unknown platforms', async () => {
     const paths = publishPaths(apiRoot, 'douyin')
     await mkdir(paths.dir, { recursive: true })
+    const idle = await post('/api/publish/douyin/resend', {})    // 无进行中发布：旧信号会让下一场多点一次重发
+    expect(idle.status).toBe(400)
+    expect(idle.json.error).toContain('进行中')
     await writeFile(paths.status, JSON.stringify({ state: 'sms_required', message: '', qr: '', ts: 1 }), 'utf8')
     const resend = await post('/api/publish/douyin/resend', {})
     expect(resend.status).toBe(200)
     expect(await stat(paths.resend)).toBeTruthy()
     const unknown = await fetch(`${base}/api/publish/kuaishou`)
     expect(unknown.status).toBe(404)
+  })
+
+  it('answers a malformed percent escape with 400, never a destroyed connection', async () => {
+    const response = await fetch(`${base}/api/publish/%E4%A`)
+    expect(response.status).toBe(400)
+    const body = await response.json() as { error?: string }
+    expect(body.error).toContain('百分号转义')
   })
 
   it('answers 503 while the orchestrator has never named a root (Minor-8 降级)', async () => {

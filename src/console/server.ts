@@ -55,7 +55,8 @@ async function handle(config: Bound, req: IncomingMessage, res: ServerResponse):
     catch { return send(res, 404, 'application/json', '{"error":"console bundle not built"}') }
   }
   if (url.pathname.startsWith('/api/')) {
-    // The console's own domains live in this sidecar (SP1's shape: SP2+ adds routes here, never proxied); each claims its prefix.
+    // The console's own domains live in this sidecar (SP1's shape: SP2+ adds routes here, never proxied); each
+    // claims its prefix, and each answers a malformed escape 400 itself, so the order between them carries no weight.
     if (await config.publishes.handle(req, url, res)) return
     await config.accounts.handle(req, url, res)
     return

@@ -164,6 +164,7 @@ const TEXT = {
   'console.publishStarting': ['发布启动…', 'Starting…'],
   'console.publishSuccess': ['发布成功', 'Published'],
   'console.publishError': ['发布失败', 'Publish failed'],
+  'console.publishLoadFailed': ['发布状态加载失败', 'Failed to load publish states'],
   'console.publishResend': ['重发验证码', 'Resend code'],
   'console.publishOaNote': ['发布即建草稿，群发在 mp 后台手动完成', 'Publishing creates a draft; broadcast manually in the mp backend'],
   'console.publishLoginHint': ['有平台发布进行中，登录可能失败', 'A publish is running; login may fail'],

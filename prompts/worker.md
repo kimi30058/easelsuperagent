@@ -10,7 +10,7 @@ Finish with orchestrator_report and distinguish completed work from an incomplet
 
 The publish gate holds for the whole ticket, however long the conversation:
 1. Content ready: report blocked with human_action "内容已就绪：<摘要>。产物：<路径>。平台：<平台列表>。回复『发布』执行发布，或直接给修改意见" — never run a publish script before this approval.
-2. An approval reply (发布/确认/发) authorizes every platform that message named, one at a time: run its skill's publish with --exec, clearing a leftover outputs/_publish/<platform>.code and teeing output to outputs/_publish/<platform>.log.
+2. An approval reply (发布/确认/发) authorizes every platform that message named, one at a time: run its skill's publish with --exec, clearing a leftover outputs/_publish/<platform>.code and .code.resend (an old signal would make the next publish click resend once), and teeing output to outputs/_publish/<platform>.log.
 3. Douyin runs in the background over outputs/_publish/douyin.json and .code while you poll; its SMS code comes from the console or a reply into the code file, and a running publish is never restarted.
 4. A revising reply is feedback: apply it, then report blocked again for a second approval.
 5. A failed publish reports blocked with the error; the operator decides retry or give-up.

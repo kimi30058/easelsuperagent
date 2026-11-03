@@ -3,6 +3,7 @@ import { mkdir, open, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { PLATFORMS, type LoginPlatform } from './login-protocol.ts'
 
+/** 与 publish-view.ts 的客户端 TERMINAL 同义（客户端不能 import 本文件——node:fs）；新增终态须两边同改。 */
 export const TERMINAL_PUBLISH_STATES = ['success', 'error'] as const
 /** 抖音发布中途可能要求短信验证码（唯一带 --sms-code-file 的 publish 子命令），其余平台无此环节。 */
 export const SMS_PUBLISH_PLATFORMS: readonly LoginPlatform[] = ['douyin']
@@ -42,7 +43,11 @@ export async function readLogTail(paths: PublishPaths): Promise<LogView | undefi
     const length = Math.min(size, 2048)
     const buffer = Buffer.alloc(length)
     await handle.read(buffer, 0, length, size - length)
-    return { tail: buffer.toString('utf8'), mtime: Math.round(mtimeMs) }
+    // 2KB 按字节切界可能落在多字节序列中间：跳过头部的 UTF-8 续字节（0b10xxxxxx，至多 3 个），
+    // 把被切断的整字符丢掉，否则日志头会带一两个乱码符。
+    let start = 0
+    while (start < 3 && start < buffer.length && (buffer[start]! & 0xc0) === 0x80) start++
+    return { tail: buffer.subarray(start).toString('utf8'), mtime: Math.round(mtimeMs) }
   } finally { await handle.close() }
 }
 

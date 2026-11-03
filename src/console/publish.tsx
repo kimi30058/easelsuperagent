@@ -1,14 +1,11 @@
 /** The publish center: one card per platform over the _publish file protocol, with douyin's SMS wall and each platform's latest calendar record. */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Button } from '../client/controls.tsx'
 import type { EaselSuperagentKey } from '../client/locales.ts'
 import { usePanel } from '../client/provider.tsx'
 import { accountsFetch } from './accounts.tsx'
+import { live, logFresh, stateLive, type PublishView } from './publish-view.ts'
 
-export interface PublishView {
-  platform: string; state: string; message: string; ts?: number
-  logTail: string; logMtime?: number
-}
 interface CalendarRecord { platform: string; title: string; date: string; status: string }
 
 /** 卡片标题的显示名（与账号页 PLATFORMS 同名，含「微信公众号」）；日历匹配名在 CALENDAR_NAMES（公众号）。 */
@@ -19,23 +16,21 @@ const DISPLAY_NAMES: Record<string, string> = {
 const CALENDAR_NAMES: Record<string, string> = {
   xiaohongshu: '小红书', bilibili: 'B站', douyin: '抖音', 'wechat-oa': '公众号',
 }
-const TERMINAL = ['success', 'error']
-const stateLive = (view: PublishView): boolean => view.state !== 'unknown' && !TERMINAL.includes(view.state)
-const logFresh = (view: PublishView): boolean =>
-  view.logMtime !== undefined && Date.now() - view.logMtime < 10 * 60_000
-/** 日志新鲜度只兜没有状态文件的平台（xhs/bili/wechat）：已知状态（含终态）不被日志启发式压过。 */
-const live = (view: PublishView): boolean => stateLive(view) || (view.state === 'unknown' && logFresh(view))
 
 /** The publish center: live cards while anything runs, the latest record otherwise. */
 export function PublishPage(): JSX.Element {
   const { t, call } = usePanel()
   const [views, setViews] = useState<PublishView[] | undefined>()
+  const [loadFailed, setLoadFailed] = useState(false)
   const [records, setRecords] = useState<CalendarRecord[] | undefined>()
   const alive = useRef(true)
   useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
+  // 首载失败给出错误态与重试，不再永驻「加载中」；轮询中途失败保留上一帧照常渲染。
   const load = useCallback(async (): Promise<void> => {
-    try { const next = await accountsFetch<PublishView[]>('/publish'); if (alive.current) setViews(next) }
-    catch { if (alive.current) setViews(undefined) }
+    try {
+      const next = await accountsFetch<PublishView[]>('/publish')
+      if (alive.current) { setViews(next); setLoadFailed(false) }
+    } catch { if (alive.current) setLoadFailed(true) }
   }, [])
   useEffect(() => { void load() }, [load])
   // 日历最近记录：404（还没有 _schedule.json）就是空态，不是错误。
@@ -50,7 +45,11 @@ export function PublishPage(): JSX.Element {
     const timer = setInterval(() => { void load() }, 1000)
     return () => { clearInterval(timer) }
   }, [views, load])
-  if (views === undefined) return <p className="dt-hint">{t('loading')}</p>
+  if (views === undefined) {
+    if (loadFailed) return <p className="dt-error" role="alert">{t('console.publishLoadFailed')}{' '}
+      <Button variant="outline" onClick={(): void => { setLoadFailed(false); void load() }}>{t('retry')}</Button></p>
+    return <p className="dt-hint">{t('loading')}</p>
+  }
   // _schedule.json 文件序最旧在前，最近一条要从尾部找。
   const latest = (platform: string): CalendarRecord | undefined =>
     records && [...records].reverse().find(record => record.platform === CALENDAR_NAMES[platform] && record.status === 'published')
@@ -72,6 +71,13 @@ function PublishCard({ view, record }: { view: PublishView; record?: CalendarRec
   const [codeError, setCodeError] = useState('')
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
+  // 日志贴底：验证码与新进度都在尾部，等码时最想看的恰在底部。用户上翻读旧行时松手，回到底部附近再自动贴回。
+  // useLayoutEffect：paint 前跳底，轮询新尾不闪旧位置（settings-kit 同款）。
+  const logRef = useRef<HTMLPreElement>(null)
+  const [pinned, setPinned] = useState(true)
+  useLayoutEffect(() => {
+    if (pinned && logRef.current !== null) logRef.current.scrollTop = logRef.current.scrollHeight
+  }, [pinned, view.logTail])
   const submit = (): void => {
     setBusy(true); setNote('')
     void accountsFetch(`/publish/${view.platform}/sms`, { method: 'POST', body: JSON.stringify({ code }) })
@@ -94,7 +100,10 @@ function PublishCard({ view, record }: { view: PublishView; record?: CalendarRec
     {view.platform === 'wechat-oa' && <div className="console-card-note">{t('console.publishOaNote')}</div>}
     {stateLive(view) && view.message !== '' && <div className="console-card-note">{view.message}</div>}
     {logFresh(view) && view.logTail !== '' &&
-      <pre className="console-publish-log">{view.logTail}</pre>}
+      <pre ref={logRef} className="console-publish-log" onScroll={event => {
+        const element = event.currentTarget
+        setPinned(element.scrollHeight - element.scrollTop - element.clientHeight < 40)
+      }}>{view.logTail}</pre>}
     {view.state === 'sms_required' && <form className="console-form" onSubmit={event => {
       event.preventDefault()
       if (!/^\d{4,8}$/.test(code.trim())) { setCodeError(t('console.smsInvalid')); return }

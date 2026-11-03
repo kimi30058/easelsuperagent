@@ -8,10 +8,11 @@ import {
   PLATFORMS, PROCESS_KEYS, bilibiliCookiePath, clearArtifacts, isPlatform, isProcessKey,
   loggedInFast, loginDir, loginPaths, profileDir, readQr, readStatus, validSmsCode, writeMarker, writeSmsCode,
 } from '../src/console/login-protocol.ts'
-import { loginCommand, LoginRunners, type RunnerHandle, type SpawnLogin } from '../src/console/login-runner.ts'
+import { AccountError, loginCommand, LoginRunners, type RunnerHandle, type SpawnLogin } from '../src/console/login-runner.ts'
 import { runReal, Whoami, type RunCommand } from '../src/console/whoami.ts'
 import { WechatCredentials } from '../src/console/wechat-credentials.ts'
 import { AccountsApi } from '../src/console/accounts-api.ts'
+import { ExecutionRoot } from '../src/console/execution-root.ts'
 import { createServer, type Server } from 'node:http'
 
 /** A run() answering by script filename; the real one runs python with a timeout. */
@@ -443,7 +444,7 @@ describe('review fixes: scripts dir override', () => {
 
 /** An api mounted on a real HTTP server with a settings upstream naming our temp root (and its own home for profile deletes). */
 async function mounted(over?: {
-  settings?: object | 'dead' | (() => object | 'dead'); home?: string; spawnLogin?: SpawnLogin; run?: RunCommand; now?: () => number
+  settings?: object | 'dead' | (() => object | 'dead'); home?: string; spawnLogin?: SpawnLogin; run?: RunCommand
 }): Promise<{ base: string; close(): Promise<void> }> {
   const settings = createServer((req, res) => {
     const view = typeof over?.settings === 'function' ? over.settings() : over?.settings
@@ -460,7 +461,7 @@ async function mounted(over?: {
   await new Promise<void>(r => settings.listen(0, '127.0.0.1', r))
   const upstream = `http://127.0.0.1:${(settings.address() as { port: number }).port}`
   const api = new AccountsApi({ upstream, scriptsDir: '/s', home: over?.home ?? root,
-    spawnLogin: over?.spawnLogin, run: over?.run, now: over?.now })
+    spawnLogin: over?.spawnLogin, run: over?.run })
   const server = createServer((req, res) => {
     void api.handle(req, new URL(req.url ?? '/', 'http://127.0.0.1'), res).catch(() => res.destroy())
   })
@@ -557,61 +558,86 @@ describe('AccountsApi routes', () => {
     } finally { await close() }
   })
 
-  it('refreshes the execution root once its TTL passes, so a migrated workspace needs no sidecar restart', async () => {
-    let now = 1_000_000
+  it('pins the first execution root for the sidecar\'s lifetime; a migrated workspace needs a restart', async () => {
     const migrated = await mkdtemp(join(tmpdir(), 'sp2-migrated-'))
     const settings = { environment: { root, variables: [] } }
-    const { base, close } = await mounted({ settings: () => settings, now: () => now })
+    const { base, close } = await mounted({ settings: () => settings })
     try {
+      expect((await fetch(`${base}/api/accounts`)).status).toBe(200)               // 首根已钉
       const paths = loginPaths(migrated, 'xiaohongshu')                  // 二维码只放进迁移后的新根
       await mkdir(paths.dir, { recursive: true })
       await writeFile(paths.status, JSON.stringify({ state: 'qr_ready', message: '', qr: '', ts: 1 }), 'utf8')
       await writeFile(paths.qr, Buffer.from([9, 9, 9]))
-      expect((await fetch(`${base}/api/login/xiaohongshu/qr`)).status).toBe(404)    // 旧根里还没有二维码
       settings.environment.root = migrated
-      now += 31_000
-      const response = await fetch(`${base}/api/login/xiaohongshu/qr`)
-      expect(response.status).toBe(200)                                             // TTL 一过就读新根
-      expect(Buffer.from(await response.arrayBuffer())).toEqual(Buffer.from([9, 9, 9]))
+      expect((await fetch(`${base}/api/login/xiaohongshu/qr`)).status).toBe(404)   // 不追新根：重建归重启
     } finally { await close(); await rm(migrated, { recursive: true, force: true }) }
   })
 
-  it('serves the cached root past the TTL when the refresh cannot reach the orchestrator', async () => {
-    let now = 1_000_000
+  it('retries a failed first resolution on the next request instead of staying 503', async () => {
     let dead = false
     let hits = 0
     const settings = { environment: { root, variables: [] } }
-    const { base, close } = await mounted({ settings: () => { hits++; return dead ? 'dead' : settings }, now: () => now })
+    const { base, close } = await mounted({ settings: () => { hits++; return dead ? 'dead' : settings } })
     try {
-      expect((await fetch(`${base}/api/accounts`)).status).toBe(200)               // 首次拿到根
-      expect(hits).toBe(1)
       dead = true
-      now += 31_000                                                                // TTL 到点但编排器断了
-      expect((await fetch(`${base}/api/accounts`)).status).toBe(200)               // 旧根继续服务，不回 503
-      expect((await fetch(`${base}/api/accounts`)).status).toBe(200)               // 失败按 TTL 退避：不再连发 4s 拉取
+      expect((await fetch(`${base}/api/accounts`)).status).toBe(503)               // 从未拿到过根才 503
+      dead = false
+      expect((await fetch(`${base}/api/accounts`)).status).toBe(200)               // 下一班重试成功并钉死
+      expect((await fetch(`${base}/api/accounts`)).status).toBe(200)               // 此后直读钉住的根
       expect(hits).toBe(2)
     } finally { await close() }
   })
 
-  it('retires the old root\'s runners when the refreshed root moves the workspace', async () => {
-    let now = 1_000_000
-    const migrated = await mkdtemp(join(tmpdir(), 'sp2-migrated-'))
-    const settings = { environment: { root, variables: [] } }
-    let settle: (code: number | null) => void = () => undefined        // SIGTERM 一打就退的 runner
-    const exited = new Promise<number | null>(resolve => { settle = resolve })
-    const signals: string[] = []
-    const spawnLogin: SpawnLogin = () => ({ pid: 31000, exited,
-      kill: signal => { signals.push(signal ?? 'SIGTERM'); settle(null) } })
-    const { base, close } = await mounted({ settings: () => settings, now: () => now, spawnLogin })
+  it('shares one settings flight among concurrent first resolutions', async () => {
+    let hits = 0
+    let release: () => void = () => undefined
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const settings = createServer((req, res) => {
+      hits++
+      void gate.then(() => {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ environment: { root, variables: [] } }))
+      })
+    })
+    await new Promise<void>(resolve => settings.listen(0, '127.0.0.1', resolve))
+    const resolver = new ExecutionRoot({ upstream: `http://127.0.0.1:${(settings.address() as { port: number }).port}` })
     try {
-      expect((await post(base, '/api/login/xiaohongshu')).status).toBe(200)        // 旧根上起了 runner
-      settings.environment.root = migrated
-      now += 31_000
-      await fetch(`${base}/api/accounts`)                                          // 任一请求触发换根重建
-      expect(signals).toEqual(['SIGTERM'])                                         // 旧 runner 收编退场
-      const retired = await readStatus(loginPaths(root, 'xiaohongshu'))
-      expect(retired.state).toBe('expired')
-      expect(retired.message).toContain('迁移')                                    // 文案说迁移，不说重启
-    } finally { await close(); await rm(migrated, { recursive: true, force: true }) }
+      const first = resolver.get(), second = resolver.get()       // 首根解析窗口里并发上客：只起一班
+      release()
+      expect(await first).toBe(root)
+      expect(await second).toBe(root)
+      expect(hits).toBe(1)
+    } finally {
+      await new Promise<void>(resolve => settings.close(() => resolve()))
+    }
+  })
+
+  it('shares one failing flight too: concurrent first resolutions reject together, the next request retries', async () => {
+    let hits = 0
+    const settings = createServer((req, res) => { hits++; res.destroy() })
+    await new Promise<void>(resolve => settings.listen(0, '127.0.0.1', resolve))
+    const resolver = new ExecutionRoot({ upstream: `http://127.0.0.1:${(settings.address() as { port: number }).port}` })
+    const refused = (promise: Promise<string>): Promise<AccountError> =>
+      promise.then(() => { throw new Error('expected a 503') }, error => error as AccountError)
+    try {
+      const [first, second] = await Promise.all([refused(resolver.get()), refused(resolver.get())])
+      expect(first.status).toBe(503)                              // 两个 waiter 同一班失败
+      expect(second.status).toBe(503)
+      expect(hits).toBe(1)
+      await refused(resolver.get())                               // 航班已清：下一个请求重试新班
+      expect(hits).toBe(2)
+    } finally {
+      await new Promise<void>(resolve => settings.close(() => resolve()))
+    }
+  })
+
+  it('answers a malformed percent escape with 400 on its own routes, not an internal error', async () => {
+    const { base, close } = await mounted()
+    try {
+      const response = await fetch(`${base}/api/login/%zz`)
+      expect(response.status).toBe(400)
+      const body = await response.json() as { error?: string }
+      expect(body.error).toContain('百分号转义')
+    } finally { await close() }
   })
 })

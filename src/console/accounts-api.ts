@@ -26,17 +26,16 @@ export async function readBody(req: IncomingMessage): Promise<unknown> {
 
 /** The sidecar's account routes: everything under /api/*, answered in place (never proxied). */
 export class AccountsApi {
-  private readonly deps: { upstream: string; scriptsDir: string; home: string; spawnLogin?: SpawnLogin; run?: RunCommand; now: () => number }
+  private readonly deps: { upstream: string; scriptsDir: string; home: string; spawnLogin?: SpawnLogin; run?: RunCommand }
   private readonly resolver: ExecutionRoot
-  private domainRoot?: string
   private runners?: LoginRunners
   private whoami?: Whoami
   private credentials?: WechatCredentials
-  constructor(deps?: { upstream?: string; scriptsDir?: string; spawnLogin?: SpawnLogin; run?: RunCommand; home?: string; now?: () => number; root?: ExecutionRoot }) {
+  constructor(deps?: { upstream?: string; scriptsDir?: string; spawnLogin?: SpawnLogin; run?: RunCommand; home?: string; root?: ExecutionRoot }) {
     this.deps = { upstream: deps?.upstream ?? process.env.EASEL_SUPERAGENT_URL ?? 'http://127.0.0.1:3082',
       scriptsDir: deps?.scriptsDir ?? defaultScriptsDir(), home: deps?.home ?? homedir(),
-      spawnLogin: deps?.spawnLogin, run: deps?.run, now: deps?.now ?? (() => Date.now()) }
-    this.resolver = deps?.root ?? new ExecutionRoot({ upstream: this.deps.upstream, now: this.deps.now })
+      spawnLogin: deps?.spawnLogin, run: deps?.run }
+    this.resolver = deps?.root ?? new ExecutionRoot({ upstream: this.deps.upstream })
   }
   /** Claim and answer one request when it falls under /api/*; false lets the caller carry on. */
   async handle(req: IncomingMessage, url: URL, res: ServerResponse): Promise<boolean> {
@@ -48,7 +47,10 @@ export class AccountsApi {
   /** Terminate every live runner (the sidecar's close path). */
   async stopAll(): Promise<void> { await this.runners?.stopAll() }
   private async route(req: IncomingMessage, url: URL, res: ServerResponse): Promise<void> {
-    const parts = url.pathname.slice('/api/'.length).split('/').map(decodeURIComponent)
+    // 畸形 %-序列按 400 应答，与 publish 域同一句话——不靠 server.ts 的调用顺序兜底成 500。
+    let parts: string[]
+    try { parts = url.pathname.slice('/api/'.length).split('/').map(decodeURIComponent) }
+    catch { throw new AccountError(400, '路径包含非法的百分号转义') }
     const [one, two, three] = parts
     const method = req.method ?? 'GET'
     if (method === 'GET' && one === 'accounts' && two === undefined && three === undefined)
@@ -127,25 +129,20 @@ export class AccountsApi {
     if (platform === 'bilibili') await rm(bilibiliCookiePath(root), { force: true })
     if (platform === 'wechat-oa') await credentials.clear()
   }
-  /** The execution root via the shared resolver; 503 until it is first known, then cached with a TTL. */
+  /** The execution root via the shared resolver; 503 until it is first known, then pinned for the sidecar's lifetime. */
   private async executionRoot(): Promise<string> {
     return await this.resolver.get()
   }
-  /** Build (once per root) and share the domain objects a request needs; a root change rebuilds them and retires
-   *  the old root's runners, so no browser keeps writing into a workspace that has moved away. */
+  /** Build (once) and share the domain objects a request needs. The root is pinned for the sidecar's lifetime, so
+   *  one build serves every request — a rebuilt or migrated workspace is picked up by restarting the sidecar. */
   private async domain(): Promise<{ root: string; runners: LoginRunners; whoami: Whoami; credentials: WechatCredentials }> {
     const root = await this.executionRoot()
-    if (this.domainRoot !== root || this.runners === undefined || this.whoami === undefined || this.credentials === undefined) {
-      const previous = this.runners
+    if (this.runners === undefined || this.whoami === undefined || this.credentials === undefined) {
       const deps = { root, scriptsDir: this.deps.scriptsDir }
       this.runners = new LoginRunners({ ...deps, spawnLogin: this.deps.spawnLogin })
       this.credentials = new WechatCredentials({ scriptsDir: this.deps.scriptsDir, run: this.deps.run })
       this.whoami = new Whoami({ ...deps, runners: this.runners, run: this.deps.run,
         wechatConfigured: async () => (await this.credentials!.get()).configured })
-      this.domainRoot = root
-      // 旧根的 runner 随旧域退场——文案单列：操作者看到的是迁移，不是重启。
-      // （还在飞的旧根 whoami 浏览器不在 runner 表里，收编不到；窗口 ≤60s 且 profile 锁会自我限制。）
-      if (previous !== undefined) await previous.stopAll('工作区已迁移，请重新扫码登录')
     }
     return { root, runners: this.runners, whoami: this.whoami, credentials: this.credentials }
   }
