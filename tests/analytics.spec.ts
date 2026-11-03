@@ -99,9 +99,6 @@ describe('works join', () => {
   })
 })
 
-/** 等队列的微任务链与 writeLatest 的 fs 落盘走完再断言（exit 只点亮 Promise，finish 链在其后）。 */
-const settle = (ms = 15): Promise<void> => new Promise(resolve => setTimeout(resolve, ms))
-
 describe('analytics command', () => {
   it('runs the three backends with explicit paths (ADR-0007)', () => {
     const deps = { root, scriptsDir: '/skills/easel/shared/scripts', python: '/py' }
@@ -135,11 +132,12 @@ describe('AnalyticsRunners queue', () => {
     await runners.enqueue('xiaohongshu'); await runners.enqueue('douyin')
     expect(runners.stateOf('douyin')).toBe('queued')
     expect(runners.progress()).toEqual({ done: 0, total: 2 })
-    await first.exit(0); await settle()
+    await first.exit(0)
+    await expect.poll(() => runners.stateOf('xiaohongshu')).toBe('idle')               // poll 到 finish 链落停（writeLatest 先于终态）
     expect(await readLatest(root, 'xiaohongshu')).toMatchObject({ followers: 100 })   // stdout 末行已落盘
     expect(runners.progress()).toEqual({ done: 1, total: 2 })
-    await second.exit(1); await settle()                                               // 非零退出 → failed，不写 latest
-    expect(runners.stateOf('douyin')).toBe('failed')
+    await second.exit(1)                                                               // 非零退出 → failed，不写 latest
+    await expect.poll(() => runners.stateOf('douyin')).toBe('failed')
     expect(await readLatest(root, 'douyin')).toBeUndefined()
     expect(spawns).toBe(2)                                                             // 串行：第二个在第一个退出后才起
     expect(runners.progress()).toEqual({ done: 0, total: 0 })                         // 批次收清
@@ -152,8 +150,7 @@ describe('AnalyticsRunners queue', () => {
       timeouts: { ...ANALYTICS_TIMEOUT_MS, xiaohongshu: 20, douyin: 20 },   // Record 全键型：铺满表再覆写用例键
       terminateWindowMs: 10, spawn: () => { spawns++; return spawns === 1 ? hung.handle : next.handle } })
     await quick.enqueue('xiaohongshu'); await quick.enqueue('douyin')
-    await settle(80)                                                                   // 超时 20ms + 升级窗 10ms 内已 kill
-    expect(hung.kills).toContain('SIGTERM'); expect(hung.kills).toContain('SIGKILL')
+    await expect.poll(() => hung.kills).toEqual(['SIGTERM', 'SIGKILL'])                // 超时 20ms → 升级链走完（不赌 80ms）
     await hung.exit(null)                                                              // SIGKILL 后 exit 到达（signal → null）
     await expect.poll(() => quick.stateOf('xiaohongshu')).toBe('failed')               // 超时 → failed（轮询到态变，不赌毫秒）
     await next.exit(0)
@@ -169,9 +166,9 @@ describe('AnalyticsRunners queue', () => {
       return good.handle
     })
     await runners.enqueue('zhihu'); await runners.enqueue('kuaishou')
-    await good.exit(0); await settle()
+    await good.exit(0)
+    await expect.poll(() => runners.stateOf('kuaishou')).toBe('idle')                  // 队尾落停 ⇒ spawn 失败的 zhihu 早已标记
     expect(runners.stateOf('zhihu')).toBe('failed')
-    expect(runners.stateOf('kuaishou')).toBe('idle')
   })
 
   it('enqueue is idempotent while queued or fetching', async () => {
@@ -179,7 +176,8 @@ describe('AnalyticsRunners queue', () => {
     const runners = make(() => only.handle)
     expect(await runners.enqueue('xiaohongshu')).toBe(true)
     expect(await runners.enqueue('xiaohongshu')).toBe(false)                           // 采集中重复请求不重起
-    await only.exit(0); await settle()                                                 // 等 writeLatest 落完，别让 afterEach 的 rm 撞上
+    await only.exit(0)
+    await expect.poll(() => runners.stateOf('xiaohongshu')).toBe('idle')               // writeLatest 落完才交给 afterEach 的 rm（不赌毫秒）
   })
 
   it('enqueueLoggedIn and catchUp only touch logged-in, stale platforms', async () => {
@@ -191,13 +189,13 @@ describe('AnalyticsRunners queue', () => {
       spawn: () => { const flight = manual(); flights.push(flight); return flight.handle } })
     expect(await runners.enqueueLoggedIn()).toBe(2)                                    // xhs + douyin（其余未登录）
     for (const flight of flights.slice()) await flight.exit(0)
-    await settle()
+    await expect.poll(() => runners.stateOf('xiaohongshu')).toBe('idle')              // 第一航班落停：utimes 要的 latest 已写（douyin 尚未 spawn 无人 exit）
     // catchUp：把 xhs 的 latest 拨回 21h 前 → 下次 catchUp 只补它（douyin 刚采过仍新鲜）
     const back = new Date(Date.now() - 21 * 3600_000)
     await utimes(latestPath(root, 'xiaohongshu'), back, back)
     expect(await runners.catchUp()).toBe(1)
-    for (const flight of flights.slice()) await flight.exit(0)                         // 收尾：catchUp 起的航班也落停
-    await settle(60)                                                                  // writeLatest+appendSnapshot 落完再交给 afterEach 的 rm
+    for (const flight of flights.slice()) await flight.exit(0)                         // 收尾：已 spawn 的航班都落停（catchUp 起的 xhs 未 spawn 则挂着，无 fs 写）
+    await expect.poll(() => runners.stateOf('douyin')).toBe('idle')                    // douyin 的 writeLatest+appendSnapshot 落完再交给 afterEach 的 rm
   })
 
   it('snapshots every successful fetch — the execution root\'s jsonl is sidecar-owned', async () => {
@@ -211,7 +209,7 @@ describe('AnalyticsRunners queue', () => {
       spawn: () => order[index++]!.handle })
     await queue.enqueue('bilibili'); await queue.enqueue('wechat-oa'); await queue.enqueue('xiaohongshu')
     for (const flight of order) await flight.exit(0)
-    await settle(60)                                                                  // 三条 writeLatest+appendSnapshot 的 fs 链
+    await expect.poll(() => queue.stateOf('xiaohongshu')).toBe('idle')                 // 队尾落停 ⇒ 三条 writeLatest+appendSnapshot 都已落盘
     const biliLine = (await readFile(jsonlPath(root, 'bilibili'), 'utf8').catch(() => '')).trim()
     expect(JSON.parse(biliLine)).toMatchObject({ followers: 456, likes: 78, posts: 2, ts: before + 60 })
     const oaLine = (await readFile(jsonlPath(root, 'wechat-oa'), 'utf8').catch(() => '')).trim()
@@ -228,8 +226,10 @@ describe('AnalyticsRunners queue', () => {
     let index = 0
     const runners = new AnalyticsRunners({ root, scriptsDir: '/skills', now: () => (before + 60) * 1000,
       spawn: () => order[index++]!.handle })
-    await runners.enqueue('douyin'); await first.exit(0); await settle(30)
-    await runners.enqueue('douyin'); await second.exit(0); await settle(60)
+    await runners.enqueue('douyin'); await first.exit(0)
+    await expect.poll(() => runners.stateOf('douyin')).toBe('idle')                    // 第一航班落停：enqueue 幂等只认非 fetching 态
+    await runners.enqueue('douyin'); await second.exit(0)
+    await expect.poll(() => runners.stateOf('douyin')).toBe('idle')                    // 第二航班也落停，两行 jsonl 可读
     const lines = (await readFile(jsonlPath(root, 'douyin'), 'utf8')).trim().split('\n')
     expect(lines).toHaveLength(2)                                                     // 截断写会只剩一行——趋势累积是本域核心语义
     expect(JSON.parse(lines[0]!)).toMatchObject({ followers: 10 })
@@ -319,7 +319,8 @@ describe('AnalyticsApi routes', () => {
     expect((await all.json() as { queued: number }).queued).toBe(0)                   // douyin 已在采，其余未登录
     expect(spawned).toBeDefined()
     spawned!.exit(0)                                                                   // 收尾：别把句柄留给 afterEach
-    await settle(60)                                                                   // writeLatest+appendSnapshot 落完再交给 rm
+    await expect.poll(async () => await readFile(jsonlPath(apiRoot, 'douyin'), 'utf8')
+      .catch(() => '')).toContain('"followers":42')                                   // jsonl 是 finish 链上最后一步 fs——它落完，latest 必已落完
   })
 
   it('404s an unknown platform and 503s while the orchestrator has never named a root', async () => {

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { Button } from '../client/controls.tsx'
 import type { EaselSuperagentKey } from '../client/locales.ts'
 import { usePanel } from '../client/provider.tsx'
-import { accountsFetch } from './accounts.tsx'
+import { accountsFetch, slowPoll } from './accounts.tsx'
 import { live, logFresh, stateLive, type PublishView } from './publish-view.ts'
 
 interface CalendarRecord { platform: string; title: string; date: string; status: string }
@@ -41,11 +41,10 @@ export function PublishPage(): JSX.Element {
       .then(result => { if (alive.current) setRecords(result.entries as CalendarRecord[]) })
       .catch(() => { if (alive.current) setRecords([]) })
   }, [call])
-  // 轮询照 SP2 模式：任一平台进行中 1s 一拉，全静默不轮询。
+  // 轮询照 SP2 模式：任一平台进行中 1s 一拉，全静默不轮询；慢响应不叠拍（slowPoll 守卫）。
   useEffect(() => {
     if (views === undefined || !views.some(live)) return
-    const timer = setInterval(() => { void load() }, 1000)
-    return () => { clearInterval(timer) }
+    return slowPoll(load)
   }, [views, load])
   if (views === undefined) {
     if (loadFailed) return <p className="dt-error" role="alert">{t('console.publishLoadFailed')}{' '}

@@ -80,6 +80,10 @@ body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang S
 .console-analytics-metrics { display: grid; gap: 4px; font-size: var(--dt-fs-meta); line-height: var(--dt-lh-meta); color: var(--dsw-alias-label-secondary); }
 .console-analytics-metric { display: flex; justify-content: space-between; gap: 8px; }
 .console-analytics-works { margin-top: 16px; }
+/* 作品表外链：链接色 + 外链 icon 与标题同基线；icon aria-hidden，新窗口语义由链接的 aria-label 念出。 */
+.console-work-link { display: inline-flex; align-items: baseline; gap: 4px; color: var(--dsw-alias-link); text-decoration: none; }
+.console-work-link:hover { text-decoration: underline; }
+.console-work-link svg { flex: none; transform: translateY(1px); }
 .console-analytics-fetchall { margin-left: auto; }
 .console-form input:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 1px; }
 /* The destructive fill must outrank `.dt-btn-ghost`, whose stylesheet the panel injects after this skin. */

@@ -88,8 +88,10 @@ it('renders the works table with matched stats and a bare dash otherwise', async
   await mountConsole(); await goto('#/analytics')
   const rows = all('.console-analytics-works tbody tr')
   expect(rows).toHaveLength(2)
-  expect(rows[0]!.textContent).toContain('秋天的第一杯奶茶')
-  expect(rows[0]!.querySelector('a[href="https://x/x1"]')).toBeTruthy()
+  const link = rows[0]!.querySelector('a[href="https://x/x1"]')!
+  expect(link.textContent).toContain('秋天的第一杯奶茶')
+  expect(link.getAttribute('aria-label')).toContain('新窗口打开')   // 外链向读屏念出新窗口语义
+  expect(link.querySelector('svg')).toBeTruthy()                    // 外链 icon（aria-hidden，视觉提示不重复念）
   expect(rows[1]!.textContent).toContain('—')
 })
 
@@ -115,6 +117,16 @@ it('polls while anything fetches or queues, and stops when quiet', async () => {
   await goto('#/overview'); await goto('#/analytics')
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 1300)) })
   expect(live).toBeGreaterThan(1)                                                    // 进行中 1s 轮询
+})
+
+it('skips a tick while the previous poll is still in flight (in-flight 守卫)', async () => {
+  let calls = 0
+  api['/api/analytics'] = () => { calls++; return reply(aggregate({ douyin: { login: true, state: 'fetching' } })) }
+  await mountConsole(); await goto('#/analytics')
+  calls = 0                                                                          // 首载已回、轮询已开；之后的响应换成永不关闭的流
+  api['/api/analytics'] = () => { calls++; return new Response(new ReadableStream({ start: () => undefined })) }
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 2300)) })
+  expect(calls).toBe(1)                                                              // 1s 拍发出后一直挂着，2s 拍被守卫跳过——慢响应不叠并发
 })
 
 it('shows the load error with a retry instead of loading forever', async () => {

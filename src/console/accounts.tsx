@@ -22,6 +22,17 @@ export async function accountsFetch<T>(path: string, init?: RequestInit): Promis
   return body as T
 }
 
+/** SP2/SP3/SP4 页共用的 1s 轮询：上一拍未落就跳过下一拍（in-flight 守卫），响应慢于间隔时不叠并发请求。 */
+export function slowPoll(tick: () => Promise<unknown>, intervalMs = 1000): () => void {
+  let inFlight = false
+  const timer = setInterval(() => {
+    if (inFlight) return
+    inFlight = true
+    void tick().catch(() => undefined).finally(() => { inFlight = false })
+  }, intervalMs)
+  return () => clearInterval(timer)
+}
+
 const WHOAMI_KEY = 'easel-superagent/accounts-whoami'
 export const readWhoamiCache = (): Record<string, WhoamiView> => {
   try { return JSON.parse(localStorage.getItem(WHOAMI_KEY) ?? '{}') as Record<string, WhoamiView> } catch { return {} }
@@ -259,11 +270,8 @@ function LoginModal({ platform, name, onClose }: { platform: string; name: strin
   }, [platform])
   useEffect(() => {
     if (terminal) return
-    const timer = setInterval(() => {
-      void accountsFetch<LoginStatusView>(`/login/${platform}/status`).then(setStatus).catch(() => undefined)
-    }, 1000)
-    return () => clearInterval(timer)
-  }, [platform, terminal, status.state])
+    return slowPoll(() => accountsFetch<LoginStatusView>(`/login/${platform}/status`).then(setStatus))
+  }, [platform, terminal])
   // 登录成功后自动收起：让卡片自己接棒显示，不需要人手点关闭（spec §6）。
   useEffect(() => {
     if (status.state !== 'success') return

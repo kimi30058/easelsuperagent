@@ -1,9 +1,9 @@
 /** The analytics page: one card per platform over /api/analytics — tiles, a sparkline, the 7-day metrics behind a chevron — plus the works table. */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Button } from '../client/controls.tsx'
+import { Button, Icon } from '../client/controls.tsx'
 import type { EaselSuperagentKey } from '../client/locales.ts'
 import { usePanel } from '../client/provider.tsx'
-import { accountsFetch } from './accounts.tsx'
+import { accountsFetch, slowPoll } from './accounts.tsx'
 
 interface SparkPoint { ts: number; followers: number }
 interface PlatformView { platform: string; login: boolean; state: string; latest?: { followers?: number; likes?: number; nickname?: string; fetchedAt?: string; metrics?: unknown }; spark: SparkPoint[] }
@@ -40,10 +40,9 @@ export function AnalyticsPage(): JSX.Element {
     } catch { if (alive.current) setLoadFailed(true) }
   }, [])
   useEffect(() => { void load() }, [load])
-  useEffect(() => {                                    // 轮询照 SP2/SP3 模式：有采集/排队 1s 一拉，全静默即停
+  useEffect(() => {                                    // 轮询照 SP2/SP3 模式：有采集/排队 1s 一拉，全静默即停；慢响应不叠拍（slowPoll 守卫）
     if (data === undefined || !data.platforms.some(busyState)) return
-    const timer = setInterval(() => { void load() }, 1000)
-    return () => { clearInterval(timer) }
+    return slowPoll(load)
   }, [data, load])
   if (data === undefined) {
     if (loadFailed) return <p className="dt-error" role="alert">{t('console.analyticsLoadFailed')}{' '}
@@ -141,7 +140,11 @@ function WorksTable({ works }: { works: WorkView[] }): JSX.Element {
     <table className="dt-table">
       <thead><tr><th>标题</th><th>平台</th><th>日期</th><th>效果</th></tr></thead>
       <tbody>{works.map((work, index) => <tr key={index}>
-        <td>{work.url !== undefined ? <a href={work.url} target="_blank" rel="noreferrer">{work.title}</a> : work.title}</td>
+        <td>{work.url !== undefined
+          ? <a className="console-work-link" href={work.url} target="_blank" rel="noreferrer"
+              aria-label={`${work.title}（${t('console.worksOpenExternal')}）`}>
+            {work.title}<Icon name="external" size={11} /></a>
+          : work.title}</td>
         <td>{DISPLAY_NAMES[work.platform] ?? work.platform}</td>
         <td>{work.date}</td>
         <td>{work.stat !== '' ? work.stat : '—'}</td>

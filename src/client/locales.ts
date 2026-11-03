@@ -200,6 +200,7 @@ const TEXT = {
   'console.analyticsWorksTitle': ['作品表现（近 30 天已发布）', 'Post performance (last 30 days)'],
   'console.analyticsWorksEmpty': ['近 30 天无已发布记录', 'No published records in the last 30 days'],
   'console.analyticsWorksHint': ['去把关对话发布', 'Publish from the gate conversation'],
+  'console.worksOpenExternal': ['新窗口打开', 'Opens in a new tab'],
   'console.analyticsOaNote': ['取数用 mp 后台会话，请先在账号页扫码', 'Stats need the mp session — scan on Accounts first'],
   'console.publishOaNote': ['发布即建草稿，群发在 mp 后台手动完成', 'Publishing creates a draft; broadcast manually in the mp backend'],
   'console.publishLoginHint': ['有平台发布进行中，登录可能失败', 'A publish is running; login may fail'],
