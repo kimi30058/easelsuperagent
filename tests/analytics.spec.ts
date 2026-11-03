@@ -154,10 +154,10 @@ describe('AnalyticsRunners queue', () => {
     await quick.enqueue('xiaohongshu'); await quick.enqueue('douyin')
     await settle(80)                                                                   // 超时 20ms + 升级窗 10ms 内已 kill
     expect(hung.kills).toContain('SIGTERM'); expect(hung.kills).toContain('SIGKILL')
-    await hung.exit(null); await settle()                                              // SIGKILL 后 exit 到达（signal → null）
-    expect(quick.stateOf('xiaohongshu')).toBe('failed')                                // 超时 → failed
-    await next.exit(0); await settle()
-    expect(quick.stateOf('douyin')).toBe('idle')                                       // 队列照常推进
+    await hung.exit(null)                                                              // SIGKILL 后 exit 到达（signal → null）
+    await expect.poll(() => quick.stateOf('xiaohongshu')).toBe('failed')               // 超时 → failed（轮询到态变，不赌毫秒）
+    await next.exit(0)
+    await expect.poll(() => quick.stateOf('douyin')).toBe('idle')                      // 队列照常推进
   })
 
   it('marks a spawn failure (no pid) failed and keeps the queue going (Review Focus 5)', async () => {
