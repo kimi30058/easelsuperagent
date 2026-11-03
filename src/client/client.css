@@ -391,7 +391,7 @@ a.dt-btn, a.dt-btn:hover { text-decoration: none; }
 .dt-header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .dt-stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
 .dt-stat-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 14px 16px; border: 0.5px solid var(--dsw-alias-border-l3); border-radius: var(--dt-radius-m); background: var(--dsw-alias-bg-layer-2); }
-button.dt-stat-tile { cursor: pointer; }
+button.dt-stat-tile { cursor: pointer; font: inherit; transition: border-color var(--dt-speed) ease; }
 button.dt-stat-tile:hover { border-color: var(--dsw-alias-border-l4); }
 button.dt-stat-tile:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
 .dt-stat-tile-value { font-size: var(--dt-fs-page); line-height: var(--dt-lh-page); font-weight: 800; letter-spacing: -0.5px; color: var(--dsw-alias-label-primary); font-variant-numeric: tabular-nums; }

@@ -31,7 +31,7 @@
 
 | 类 | 角色 |
 |---|---|
-| `dt-header` `dt-header-title` `dt-header-hint` `dt-header-actions` | 页头带：页面名（page 字阶）、其下一行提示、右侧页面自身动作 |
+| `dt-header` `dt-header-text` `dt-header-title` `dt-header-hint` `dt-header-actions` | 页头带：`dt-header-text` 为标题与提示的纵排包裹列，页面名（page 字阶）、其下一行提示、右侧页面自身动作 |
 | `dt-stat-row` `dt-stat-tile` `dt-stat-tile-value` `dt-stat-tile-label` | 统计块：数值 page 字阶 / 800 在上，label caption 在下 |
 | `dt-empty` `dt-empty-icon` `dt-empty-title` `dt-empty-hint` `dt-empty-action` | 空态：缺了什么、一行提示与引导动作 |
 
