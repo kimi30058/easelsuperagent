@@ -9,6 +9,16 @@ import {
   loggedInFast, loginDir, loginPaths, profileDir, readQr, readStatus, validSmsCode, writeMarker, writeSmsCode,
 } from '../src/console/login-protocol.ts'
 import { loginCommand, LoginRunners, type RunnerHandle, type SpawnLogin } from '../src/console/login-runner.ts'
+import { Whoami, type RunCommand } from '../src/console/whoami.ts'
+
+/** A run() answering by script filename; the real one runs python with a timeout. */
+const runFrom = (table: Record<string, { code: number; stdout: string } | Error>): RunCommand =>
+  async cmd => {
+    const key = cmd.map(String).join(' ').match(/(\w[\w-]*\.py)/)?.[1] ?? ''
+    const hit = table[key]
+    if (hit instanceof Error) throw hit
+    return hit ?? { code: 0, stdout: '' }
+  }
 
 let root = ''
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'sp2-protocol-')) })
@@ -199,5 +209,85 @@ describe('LoginRunners lifecycle', () => {
     const status = await runners.status('douyin')
     expect(status.state).toBe('error')
     expect(status.message).toContain('douyin.log')
+  })
+
+  it('waits for a just-succeeded login runner instead of racing the profile lock', async () => {
+    const fake = fakeSpawn()
+    const runners = new LoginRunners({ root, scriptsDir: '/s', spawnLogin: fake.spawnLogin })
+    await runners.start('xiaohongshu')                  // handle 活着
+    await writeMarker(loginPaths(root, 'xiaohongshu'), 'success', '')  // runner 报了 success 但浏览器还在保存
+    let ran = false
+    const run: import('../src/console/whoami.ts').RunCommand = async () => {
+      ran = true; return { code: 0, stdout: '{"loggedIn": true}' }
+    }
+    const { Whoami } = await import('../src/console/whoami.ts')
+    const whoami = new Whoami({ root, scriptsDir: '/s', runners, run })
+    const checking = whoami.check('xiaohongshu')
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(ran).toBe(false)                              // 等 runner 退出，不起第二个浏览器
+    fake.handles[0]!.finish(0)
+    expect(await checking).toEqual({ loggedIn: true, name: '', avatar: '' })
+    expect(ran).toBe(true)
+  })
+})
+
+describe('Whoami', () => {
+  const runnersOf = (): LoginRunners => new LoginRunners({ root, scriptsDir: '/s' })
+
+  it('parses the last JSON line, caches 600s, and refreshes a logged-in entry missing its name sooner', async () => {
+    let calls = 0
+    let now = 1_000_000
+    const run: RunCommand = async cmd => {
+      calls++; expect(cmd.join(' ')).toContain('xhs_publish.py')
+      return { code: 0, stdout: 'noise\n{"loggedIn": true, "name": "小红书昵称", "avatar": ""}' }
+    }
+    const whoami = new Whoami({ root, scriptsDir: '/s', runners: runnersOf(), run, now: () => now })
+    const first = await whoami.check('xiaohongshu')
+    expect(first).toEqual({ loggedIn: true, name: '小红书昵称', avatar: '' })
+    now += 30_000; await whoami.check('xiaohongshu'); expect(calls).toBe(1)   // 60s 窗口内命中缓存
+    now += 31_000; await whoami.check('xiaohongshu'); expect(calls).toBe(2)   // 缺 avatar → 60s 后重抓
+  })
+
+  it('force skips the cache and a single flight dedupes concurrent checks', async () => {
+    let started = 0
+    const run: RunCommand = async () => {
+      started++; await new Promise(r => setTimeout(r, 20))
+      return { code: 0, stdout: '{"loggedIn": false}' }
+    }
+    const whoami = new Whoami({ root, scriptsDir: '/s', runners: runnersOf(), run })
+    await Promise.all([whoami.check('douyin'), whoami.check('douyin')])
+    expect(started).toBe(1)
+    await whoami.check('douyin', true); expect(started).toBe(2)
+  })
+
+  it('treats an unconfident answer as 502, never a false negative, and writes no marker for it', async () => {
+    const run: RunCommand = async cmd => cmd.join(' ').includes('douyin_publish.py')
+      ? { code: 1, stdout: '{"loggedIn": false}' }                    // 非零退出：不可信
+      : { code: 0, stdout: '{"loggedIn": true, "name": "b", "avatar": "c", "error": "boom"}' }  // 带 error：不可信
+    const whoami = new Whoami({ root, scriptsDir: '/s', runners: runnersOf(), run })
+    await expect(whoami.check('douyin')).rejects.toMatchObject({ status: 502 })
+    await expect(whoami.check('xiaohongshu')).rejects.toMatchObject({ status: 502 })
+    await expect(readFile(loginPaths(root, 'xiaohongshu').status, 'utf8')).rejects.toThrow()
+  })
+
+  it('confirms logged-in and writes the marker; confirms logged-out by deleting it', async () => {
+    const run: RunCommand = async () => ({ code: 0, stdout: '{"loggedIn": true, "name": "n", "avatar": "a"}' })
+    const whoami = new Whoami({ root, scriptsDir: '/s', runners: runnersOf(), run })
+    await whoami.check('xiaohongshu')
+    expect(await loggedInFast(root, 'xiaohongshu')).toBe(true)
+    const runOut: RunCommand = async () => ({ code: 0, stdout: '{"loggedIn": false}' })
+    const out = new Whoami({ root, scriptsDir: '/s', runners: runnersOf(), run: runOut })
+    await out.check('xiaohongshu')
+    expect(await loggedInFast(root, 'xiaohongshu')).toBe(false)
+  })
+
+  it('maps a timeout to 504 and lets wechat-oa fall back to credentials when the mp session is absent', async () => {
+    const timeout: RunCommand = async () => { throw new Error('timed out') }
+    const whoami = new Whoami({ root, scriptsDir: '/s', runners: runnersOf(), run: timeout })
+    await expect(whoami.check('bilibili')).rejects.toMatchObject({ status: 504 })
+    const run: RunCommand = async () => ({ code: 0, stdout: '{"loggedIn": false}' })
+    const wechat = new Whoami({ root, scriptsDir: '/s', runners: runnersOf(), run,
+      wechatConfigured: async () => true })
+    expect(await wechat.check('wechat-oa')).toEqual({ loggedIn: true, name: '微信公众号', avatar: '' })
   })
 })

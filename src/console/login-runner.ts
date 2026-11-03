@@ -121,6 +121,16 @@ export class LoginRunners {
     const runner = this.runners.get(key)
     return runner === undefined ? undefined : runnerExitCode.get(runner)
   }
+  /** Whether a runner of this key is alive right now (whoami's mutex asks before starting a browser). */
+  isRunning(key: ProcessKey): boolean {
+    const runner = this.runners.get(key)
+    return runner !== undefined && runnerExitCode.get(runner) === undefined
+  }
+  /** Wait up to the terminate window for a runner's exit; true when it is gone (or was never there). */
+  async waitExit(key: ProcessKey): Promise<boolean> {
+    const runner = this.runners.get(key)
+    return runner === undefined ? true : settled(runner)
+  }
   private async launch(key: ProcessKey): Promise<void> {
     const paths = loginPaths(this.deps.root, key)
     await clearArtifacts(paths)                                        // 旧状态/二维码不得混进新一轮
