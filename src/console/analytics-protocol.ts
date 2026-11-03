@@ -46,6 +46,20 @@ export async function readSpark(root: string, platform: LoginPlatform, limit = 9
   return points.slice(-limit)
 }
 
+/** jsonl 自记是 account_stats 的行为（should_record + 分层压缩）；bili/mp 两家脚本不写，sidecar 采集成功后代记一条
+ *  秒级快照补上趋势（ts 与脚本同口径：epoch 秒）。account_stats 族仍归脚本，避免双写。 */
+export async function appendSnapshot(root: string, platform: LoginPlatform,
+  snap: { followers?: unknown; likes?: unknown; posts?: unknown }, now: number): Promise<void> {
+  if (typeof snap.followers !== 'number' && typeof snap.likes !== 'number' && typeof snap.posts !== 'number') return
+  await mkdir(analyticsDir(root), { recursive: true })
+  await writeFile(jsonlPath(root, platform), `${JSON.stringify({
+    ts: Math.floor(now / 1000),
+    ...(typeof snap.followers === 'number' ? { followers: snap.followers } : {}),
+    ...(typeof snap.likes === 'number' ? { likes: snap.likes } : {}),
+    ...(typeof snap.posts === 'number' ? { posts: snap.posts } : {}),
+  })}\n`, 'utf8')
+}
+
 /** A calendar record as calendar_ops writes it (platform 存中文名)；url 是发布→效果归因的主 join 键。 */
 export interface CalendarRecord { platform: string; title: string; date: string; status: string; url?: string }
 /** Read the calendar's entries; a missing or torn _schedule.json reads as none（页面空态，不是错误）. */

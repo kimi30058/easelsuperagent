@@ -1,5 +1,5 @@
 /** Tests for the analytics domain's node side: the _analytics file protocol, the works join, and (later tasks) the runner and routes. */
-import { mkdtemp, mkdir, rm, utimes, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer, type Server } from 'node:http'
@@ -197,6 +197,25 @@ describe('AnalyticsRunners queue', () => {
     await utimes(latestPath(root, 'xiaohongshu'), back, back)
     expect(await runners.catchUp()).toBe(1)
     for (const flight of flights.slice()) await flight.exit(0)                         // 收尾：catchUp 起的航班也落停
+  })
+
+  it('snapshots bili/mp fetches itself — account_stats platforms stay the script\'s to write', async () => {
+    const before = Math.floor(Date.now() / 1000)
+    const bili = manual('{"platform":"bilibili","followers":456,"likes":78,"posts":2}')
+    const oa = manual('{"platform":"wechat-oa","followers":10,"likes":20,"posts":3}')
+    const xhs = manual('{"platform":"xiaohongshu","followers":1,"likes":2,"posts":3}')
+    const order = [bili, oa, xhs]
+    let index = 0
+    const queue = new AnalyticsRunners({ root, scriptsDir: '/skills', now: () => (before + 60) * 1000,   // 秒级 ts 可断言
+      spawn: () => order[index++]!.handle })
+    await queue.enqueue('bilibili'); await queue.enqueue('wechat-oa'); await queue.enqueue('xiaohongshu')
+    for (const flight of order) await flight.exit(0)
+    await settle(60)                                                                  // 三条 writeLatest+appendSnapshot 的 fs 链
+    const biliLine = (await readFile(jsonlPath(root, 'bilibili'), 'utf8').catch(() => '')).trim()
+    expect(JSON.parse(biliLine)).toMatchObject({ followers: 456, likes: 78, posts: 2, ts: before + 60 })
+    const oaLine = (await readFile(jsonlPath(root, 'wechat-oa'), 'utf8').catch(() => '')).trim()
+    expect(JSON.parse(oaLine)).toMatchObject({ followers: 10, ts: before + 60 })
+    await expect(readFile(jsonlPath(root, 'xiaohongshu'), 'utf8')).rejects.toThrow()   // account_stats 族：sidecar 不写
   })
 })
 

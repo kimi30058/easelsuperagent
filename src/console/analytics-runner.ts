@@ -4,7 +4,7 @@ import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pythonBin } from './python.ts'
 import { bilibiliCookiePath, loggedInFast, type LoginPlatform, type ProcessKey } from './login-protocol.ts'
-import { lastJsonObject, latestPath, writeLatest } from './analytics-protocol.ts'
+import { appendSnapshot, lastJsonObject, latestPath, writeLatest } from './analytics-protocol.ts'
 
 /** The three fetch backends' timeouts: browsers are slow, mp's web session slowest (原版 web 口径). */
 export const ANALYTICS_TIMEOUT_MS: Record<LoginPlatform, number> = {
@@ -129,7 +129,13 @@ export class AnalyticsRunners {
       // exit 后 stdout 的 end 事件必达（kill 路径进程已死，管道随关）；拒绝（spawn 失败）读作空串。
       const text = await handle.stdout.catch(() => '')
       const parsed = lastJsonObject(text)
-      if (parsed !== undefined) { await writeLatest(this.deps.root, platform, parsed).catch(() => undefined); ok = true }
+      if (parsed !== undefined) {
+        await writeLatest(this.deps.root, platform, parsed).catch(() => undefined)
+        // bili/mp 的脚本不写 jsonl（那是 account_stats 的行为），趋势快照由 sidecar 代记，sparkline 才有形。
+        if (platform === 'bilibili' || platform === 'wechat-oa')
+          await appendSnapshot(this.deps.root, platform, parsed, this.deps.now()).catch(() => undefined)
+        ok = true
+      }
     }
     this.states.set(platform, ok ? 'idle' : 'failed')
     this.batch.done += 1
