@@ -18,12 +18,20 @@ it('leads the overview with the pending Tickets, then problems, the last day and
     && [...row.querySelectorAll('.dt-ticket-actions button, .dt-ticket-actions a')].every(action => action.querySelector('svg')))).toBe(true)
   expect(text()).toContain('来源会在每次轮询时自动重试')
   expect(text()).toContain('需要确认按钮颜色')
-  expect(all('.dt-stat').map(stat => stat.textContent)).toEqual(['到达12', '被过滤2', '已评估5', '接单或续做1', '执行中2 / 3', '排队0', '等待新触发1'])
+  expect(all('.dt-stat-tile').map(stat => stat.textContent)).toEqual(['12到达', '2被过滤', '5已评估', '1接单或续做', '2 / 3执行中', '0排队', '1等待新触发'])
   expect(all('.dt-chip').map(chip => chip.textContent)[0]).toBe('飞书#42CI 失败1')
   expect(document.querySelector('.dt-chip-problem')?.textContent).toBe('CI 失败1')
   expect(document.querySelector<HTMLAnchorElement>('a.dt-chip-link')?.href).toBe('https://applink.feishu.cn/client/chat/open?openChatId=oc_1')
   await click(all('.dt-more-link').at(-1)!)
   expect(tab(zh['tab.execution']).getAttribute('aria-selected')).toBe('true')
+})
+
+it('renders the header band and the flow numbers as stat tiles', async () => {
+  await mount()
+  expect(document.querySelector('.dt-header-title')?.textContent).toBe(zh['tab.overview'])
+  const labels = [...document.querySelectorAll('.dt-stat-tile-label')].map(tile => tile.textContent)
+  expect(labels).toContain(zh['flowReceivedLabel'])
+  expect(labels).toContain(zh['executingLabel'])
 })
 
 it('re-evaluates or dismisses an unjudged Eval from the problem list', async () => {
@@ -45,8 +53,8 @@ it('opens the Thread of an unjudged Eval at its Trigger from the problem list', 
 it('follows the last day\'s counts to the status of each stage', async () => {
   await mount()
   // Arrived Triggers include filtered ones, which have no Thread, so no list has that count to link to.
-  expect(all('.dt-stat button').map(button => button.textContent)).toEqual(['2', '1'])
-  await click(all('.dt-stat button')[0]!)
+  expect(all('button.dt-stat-tile').map(tile => tile.querySelector('.dt-stat-tile-value')?.textContent)).toEqual(['2', '1'])
+  await click(all('button.dt-stat-tile')[0]!)
   expect(tab(zh['tab.source']).getAttribute('aria-selected')).toBe('true')
   await click(zh.sourceFilteredTitle)
   expect(text()).toContain('looks wrong')
@@ -96,13 +104,13 @@ it('offers the step that fixes a settings problem as a button on the overview', 
 
 it('counts the messages not sent in the last day, linking to the Source status, and shows nothing when there are none', async () => {
   await mount()
-  expect(all('.dt-stat-label').map(label => label.textContent)).not.toContain(zh.flowDroppedLabel)
+  expect(all('.dt-stat-tile-label').map(label => label.textContent)).not.toContain(zh.flowDroppedLabel)
   server.dropped = [droppedReply('m2', 1, 'feishu', 'channelGone'), droppedReply('m1', 2, 'feishu', 'channelIgnored'), droppedReply('m0',
     30, 'feishu', 'channelGone')]
   await remount()
-  const stat = all('.dt-stat').find(item => item.querySelector('.dt-stat-label')?.textContent === zh.flowDroppedLabel)!
-  expect(stat.textContent).toBe(`${zh.flowDroppedLabel}2`)
-  await click(stat.querySelector('button')!)
+  const stat = all('button.dt-stat-tile').find(item => item.querySelector('.dt-stat-tile-label')?.textContent === zh.flowDroppedLabel)!
+  expect(stat.textContent).toBe(`2${zh.flowDroppedLabel}`)
+  await click(stat)
   expect(tab(zh['tab.source'])?.getAttribute('aria-selected')).toBe('true')
 })
 
@@ -128,7 +136,7 @@ it('shows the overview in English', async () => {
   expect(all('.dt-section-title').map(title => title.textContent)).toEqual([`${en.pendingTickets}2`, `${en.problems}2`,
     `${en.lastDay}${en.details}`, `${en['term.executor']}${en.details}`])
   expect(all('.dt-cards .dt-ticket-stage').map(item => item.textContent)).toEqual([en['stage.answer'], en['stage.failed']])
-  expect(all('.dt-stat-label').map(label => label.textContent)).toEqual([en.flowReceivedLabel, en.flowFilteredLabel, en.flowJudgedLabel,
+  expect(all('.dt-stat-tile-label').map(label => label.textContent)).toEqual([en.flowReceivedLabel, en.flowFilteredLabel, en.flowJudgedLabel,
     en.flowAcceptedLabel, en.executingLabel, en.queuedLabel, en.idleLabel])
 })
 

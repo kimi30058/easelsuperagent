@@ -6,7 +6,7 @@ import { useAction, usePanel, usePanelData } from './provider.tsx'
 import { setupPage, settingsRoute, type Route } from './route.ts'
 import { TicketLine } from './rows.tsx'
 import { healthText, localized, reasonLabel, valueLabel, readableMarkers } from './text.ts'
-import { CheckSetupButton, ConfirmButton, Hint, LoadState, Section, SetupMessage } from './widgets.tsx'
+import { CheckSetupButton, ConfirmButton, Hint, LoadState, PageHeader, Section, SetupMessage, StatRow, StatTile } from './widgets.tsx'
 
 function ProblemLine({ problem, onChanged }: { problem: Problem; onChanged: () => Promise<void> }) {
   const { t, call, navigate } = usePanel()
@@ -63,14 +63,12 @@ export function OverviewPage() {
   const { setup } = usePanelData()
   const { data, error, reload } = usePoll(() => call('GET overview'), [])
   if (!data) return <LoadState error={error} loading />
-  const stat = (label: string, value: ReactNode, route?: Route) => <span className="dt-stat">
-    <span className="dt-stat-label">{label}</span>
-    {route ? <button type="button" className="dt-textlink dt-stat-value" onClick={() => navigate(route)}>{value}</button> : <span
-      className="dt-stat-value">{value}</span>}
-  </span>
+  const stat = (label: string, value: ReactNode, route?: Route) => <StatTile value={value} label={label}
+    onClick={route ? () => navigate(route) : undefined} />
   const more = (route: Route) => <button type="button" className="dt-textlink dt-more-link"
     onClick={() => navigate(route)}>{t('details')}</button>
   return <>
+    <PageHeader title={t('tab.overview')} hint={t('console.overviewIntro')} />
     {error && <LoadState error={error} loading={false} />}
     <Section title={t('pendingTickets')} count={data.person.length}>
       {data.person.length ? <ul className="dt-list dt-cards">{data.person.map(ticket => <TicketLine key={ticket.id} ticket={ticket} question
@@ -83,21 +81,21 @@ export function OverviewPage() {
     </Section>}
     <Section title={t('lastDay')} action={more({ page: 'trigger', query: { filter: 'recent' } })}>
       {/* Received and evaluated counts operate on Triggers rather than Threads or Decisions, so they do not link to filtered views. */}
-      <div className="dt-stats">
+      <StatRow>
         {stat(t('flowReceivedLabel'), data.flow.received)}
         {stat(t('flowFilteredLabel'), data.flow.filtered, data.flow.filtered ? { page: 'source' } : undefined)}
         {stat(t('flowJudgedLabel'), data.flow.judged)}
         {stat(t('flowAcceptedLabel'), data.flow.accepted, { page: 'eval', query: { window: '24h' } })}
         {data.flow.dropped > 0 && stat(t('flowDroppedLabel'), data.flow.dropped, { page: 'source' })}
-      </div>
+      </StatRow>
     </Section>
     <Section title={t('term.executor')} action={more({ page: 'execution' })}>
       {/* Pauses surface in `problems` above, so Executor counts render the same in both states; while setup waits, nothing runs. */}
-      {setup?.problem ? <Hint>{t('executorWaitingSetup')}</Hint> : <div className="dt-stats">
+      {setup?.problem ? <Hint>{t('executorWaitingSetup')}</Hint> : <StatRow>
         {stat(t('executingLabel'), `${data.executor.running} / ${data.executor.maxWorkers}`)}
         {stat(t('queuedLabel'), data.executor.queued)}
         {stat(t('idleLabel'), data.executor.idle)}
-      </div>}
+      </StatRow>}
     </Section>
   </>
 }

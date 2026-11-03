@@ -295,9 +295,6 @@ div.dt-preview-head { color: var(--dsw-alias-label-secondary); }
 .dt-att-error::before { background: var(--dsw-alias-state-error-primary); }
 .dt-att-what { font-size: var(--dt-fs-meta); line-height: var(--dt-lh-meta); font-weight: 500; color: var(--dsw-alias-state-warn-primary); }
 .dt-att-error .dt-att-what, .dt-att-error .dt-att-what .dt-open { color: var(--dsw-alias-state-error-primary); }
-.dt-stats { display: flex; flex-wrap: wrap; gap: 6px 20px; }
-.dt-stat { display: inline-flex; align-items: baseline; gap: 6px; font-size: var(--dt-fs-meta); color: var(--dsw-alias-label-caption); }
-.dt-stat-value { font-size: var(--dt-fs-title); font-weight: 500; color: var(--dsw-alias-label-primary); font-variant-numeric: tabular-nums; }
 .dt-more-link { font-size: var(--dt-fs-meta); font-weight: 400; }
 .dt-settings { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 24px; align-items: start; }
 .dt-settings-nav { position: sticky; top: 0; display: flex; flex-direction: column; gap: 2px; }

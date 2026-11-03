@@ -155,6 +155,7 @@ const TEXT = {
   'console.accountsIntro': ['平台登录态与凭证；昵称由 whoami 定期校验自愈。', 'Platform login states and credentials; names heal through periodic whoami checks.'],
   'console.refresh': ['刷新', 'Refresh'],
   'console.offlineBar': ['编排器离线，重试中…', 'Orchestrator offline, retrying…'],
+  'console.overviewIntro': ['需要你处理的事与系统状态。', 'What needs you and how the system runs.'],
   'console.messagesIntro': ['所有对话线程与新请求的入口。', 'Every thread and the entry for new requests.'],
   'console.newThread': ['新请求', 'New request'],
   'console.placeholder': ['向 superagent 下达内容请求…', 'Ask the superagent for content…'],

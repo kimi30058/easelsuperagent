@@ -21,7 +21,7 @@
 | `--dt-fs-caption` / `--dt-lh-caption` | 12/18 | 最小可读文本：标签、芯片 | `dt-tag` `dt-chip` `dt-changed-tag` |
 | `--dt-fs-meta` / `--dt-lh-meta` | 13/20 | 元信息：时间、表格、mono、阶段标 | `dt-row-meta` `dt-table` `dt-stage` `dt-mono` `dt-pre` |
 | `--dt-fs-body` / `--dt-lh-body` | 14/22 | 正文：段落、事件、键值、控件标签 | `dt-md` `dt-event-text` `dt-kv` `dt-hint` `dt-btn` |
-| `--dt-fs-title` / `--dt-lh-title` | 15/24 | 行/卡片标题 | `dt-row-title` `dt-open` `dt-row-label` `dt-stat-value` |
+| `--dt-fs-title` / `--dt-lh-title` | 15/24 | 行/卡片标题 | `dt-row-title` `dt-open` `dt-row-label` |
 | `--dt-fs-head` / `--dt-lh-head` | 16/24 | 区块头、面板标题、模态标题 | `dt-title` `dt-section-title` `dt-settings-title` |
 | `--dt-fs-page` / `--dt-lh-page` | 22/30 | 页面标题 | `dt-page-title h2` |
 

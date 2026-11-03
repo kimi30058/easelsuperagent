@@ -101,7 +101,7 @@ it('points a setup problem at the settings that fix it', async () => {
   expect(text()).toContain(zh['setup.feishuNoApp'])
   // Nothing runs while setup waits, so the Executor says so instead of counting.
   expect(text()).toContain(zh.executorWaitingSetup)
-  expect(all('.dt-stat').map(stat => stat.textContent)).not.toContain('执行中2 / 3')
+  expect(all('.dt-stat-tile').map(stat => stat.textContent)).not.toContain('2 / 3执行中')
   expect(text()).toContain('在设置 › 来源的飞书卡片修正后保存，会重新检查')
   await click(find(zh.problemSetupFeishu, 'button, a, [role="button"]'))
   expect(tab(zh['tab.settings']).getAttribute('aria-selected')).toBe('true')
