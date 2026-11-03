@@ -28,17 +28,23 @@ beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'sp2-protocol-')) }
 afterEach(async () => { await rm(root, { recursive: true, force: true }) })
 
 describe('platform table', () => {
-  it('lists the four fork platforms plus the wechat-oa-mp process key, and rejects anything else', () => {
-    expect(PLATFORMS.map(p => p.platform)).toEqual(['xiaohongshu', 'bilibili', 'douyin', 'wechat-oa'])
+  it('lists the seven fork platforms plus the wechat-oa-mp process key, and rejects anything else', () => {
+    expect(PLATFORMS.map(p => p.platform)).toEqual(
+      ['xiaohongshu', 'bilibili', 'douyin', 'wechat-oa', 'kuaishou', 'weixin-channels', 'zhihu'])
     expect(PROCESS_KEYS).toContain('wechat-oa-mp')
-    expect(isPlatform('xiaohongshu')).toBe(true)
-    expect(isPlatform('kuaishou')).toBe(false)          // fork 发布范围外的 Easel 平台
+    expect(isPlatform('kuaishou')).toBe(true)           // web_publisher 族，spec 2026-11-03 接入
+    expect(isPlatform('weixin-channels')).toBe(true)
+    expect(isPlatform('zhihu')).toBe(true)
+    expect(isPlatform('weibo')).toBe(false)             // 真未知平台（原 kuaishou 钉子反转，Review Focus 2）
     expect(isProcessKey('../../etc')).toBe(false)       // Review Focus 1
   })
 
   it('maps browser platforms to their global profile directory and leaves biliup/wechat-oa without one', () => {
     expect(profileDir('xiaohongshu')).toContain('XiaohongshuProfile')
     expect(profileDir('wechat-oa-mp')).toContain('WeixinMpProfile')
+    expect(profileDir('kuaishou')).toContain('KuaishouProfile')
+    expect(profileDir('weixin-channels')).toContain('ChannelsProfile')
+    expect(profileDir('zhihu')).toContain('ZhihuProfile')
     expect(profileDir('bilibili')).toBeUndefined()
     expect(profileDir('wechat-oa')).toBeUndefined()
   })
@@ -476,11 +482,12 @@ const post = (base: string, path: string, body?: unknown): Promise<Response> =>
     body: body === undefined ? undefined : JSON.stringify(body) })
 
 describe('AccountsApi routes', () => {
-  it('lists the four cards with fast-path login state', async () => {
+  it('lists the seven cards with fast-path login state', async () => {
     const { base, close } = await mounted()
     try {
       const cards = await (await fetch(`${base}/api/accounts`)).json() as { platform: string; loggedIn: boolean }[]
-      expect(cards.map(card => card.platform)).toEqual(['xiaohongshu', 'bilibili', 'douyin', 'wechat-oa'])
+      expect(cards.map(card => card.platform)).toEqual(
+        ['xiaohongshu', 'bilibili', 'douyin', 'wechat-oa', 'kuaishou', 'weixin-channels', 'zhihu'])
       expect(cards[0]!.loggedIn).toBe(false)
     } finally { await close() }
   })
@@ -489,7 +496,7 @@ describe('AccountsApi routes', () => {
     const { base, close } = await mounted()
     try {
       expect((await fetch(`${base}/api/login/..%2f..%2fetc/status`)).status).toBe(404)   // Review Focus 1
-      expect((await post(base, '/api/login/kuaishou')).status).toBe(404)
+      expect((await post(base, '/api/login/weibo')).status).toBe(404)                    // 真未知平台（原 kuaishou 哨兵）
       expect((await fetch(`${base}/api/accounts/tail/whoami`)).status).toBe(404)
     } finally { await close() }
   })
