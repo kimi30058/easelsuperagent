@@ -52,32 +52,45 @@ const tick = async (ms = 1300): Promise<void> => {
   await settle()
 }
 
-/** All four cards plus whoami answers for each, so the page's background verification settles. */
+/** All seven cards plus whoami answers for each, so the page's background verification settles. */
 function serveCards(cards: { platform: string; name: string; backend: string; loggedIn: boolean }[],
   whoami: Record<string, { loggedIn: boolean; name: string; avatar: string }> = {}) {
   api['/api/accounts'] = () => reply(cards)
-  for (const platform of ['xiaohongshu', 'bilibili', 'douyin', 'wechat-oa'])
+  for (const platform of ['xiaohongshu', 'bilibili', 'douyin', 'wechat-oa', 'kuaishou', 'weixin-channels', 'zhihu'])
     api[`/api/accounts/${platform}/whoami`] = () => reply(whoami[platform] ?? { loggedIn: false, name: '', avatar: '' })
 }
 
-const FOUR_CARDS = [
+const SEVEN_CARDS = [
   { platform: 'xiaohongshu', name: '小红书', backend: 'xhs', loggedIn: true },
   { platform: 'bilibili', name: 'B站', backend: 'biliup', loggedIn: false },
   { platform: 'douyin', name: '抖音', backend: 'douyin', loggedIn: false },
   { platform: 'wechat-oa', name: '微信公众号', backend: 'wechat-oa', loggedIn: false },
+  { platform: 'kuaishou', name: '快手', backend: 'web', loggedIn: false },
+  { platform: 'weixin-channels', name: '微信视频号', backend: 'web', loggedIn: false },
+  { platform: 'zhihu', name: '知乎', backend: 'web', loggedIn: false },
 ]
 
 it('renders one card per platform with the fast-path state and whoami names', async () => {
-  serveCards(FOUR_CARDS, { xiaohongshu: { loggedIn: true, name: '小红书昵称', avatar: '' } })
+  serveCards(SEVEN_CARDS, { xiaohongshu: { loggedIn: true, name: '小红书昵称', avatar: '' } })
   await mountConsole()
   await goto('#/accounts')
   expect(all('.console-card-title span:first-child').map(title => title.textContent))
-    .toEqual(['小红书', 'B站', '抖音', '微信公众号'])
-  expect(all('.console-state').map(state => state.textContent)).toEqual([zh['console.loggedIn'], zh['console.loggedOut'],
-    zh['console.loggedOut'], zh['console.loggedOut']])
+    .toEqual(['小红书', 'B站', '抖音', '微信公众号', '快手', '微信视频号', '知乎'])
+  expect(all('.console-state').map(state => state.textContent)).toEqual([zh['console.loggedIn'], ...Array(6).fill(zh['console.loggedOut'])])
   expect(container!.textContent).toContain('小红书昵称')
   // whoami 结果进 localStorage：下次开页秒显
   expect(localStorage.getItem('easel-superagent/accounts-whoami')).toContain('小红书昵称')
+})
+
+it('renders the web family as plain QR cards: no credentials row, no mp button', async () => {
+  serveCards(SEVEN_CARDS.map(card => ({ ...card, loggedIn: false })))
+  await mountConsole()
+  await goto('#/accounts')
+  const zhihu = document.querySelector('.console-card[data-platform="zhihu"]') as HTMLElement
+  expect(zhihu).toBeTruthy()
+  expect(zhihu.textContent).toContain('知乎')
+  expect(zhihu.textContent).not.toContain(zh['console.credentialsConfigure'])   // 凭证行是 wechat-oa 专属（Review Focus 6）
+  expect(zhihu.querySelector('button')!.textContent).toContain(zh['console.login'])
 })
 
 it('shows the offline-root state when every account call answers 503', async () => {   // Review Focus 5
@@ -92,7 +105,7 @@ const cardButton = (platform: string, label: string): HTMLButtonElement =>
   all(`.console-card[data-platform='${platform}'] button`).find(button => button.textContent === label) as HTMLButtonElement
 
 it('runs the login modal through the state machine to success', async () => {
-  serveCards(FOUR_CARDS.map(card => card.platform === 'xiaohongshu' ? card : { ...card, loggedIn: false }))
+  serveCards(SEVEN_CARDS.map(card => card.platform === 'xiaohongshu' ? card : { ...card, loggedIn: false }))
   let phase = 'qr'
   api['/api/login/xiaohongshu'] = () => reply({ state: 'starting', message: '' })
   api['/api/login/xiaohongshu/status'] = () => reply(phase === 'qr'
@@ -109,7 +122,7 @@ it('runs the login modal through the state machine to success', async () => {
 }, 9000)
 
 it('submits an sms code through the douyin wall and validates its shape', async () => {
-  serveCards(FOUR_CARDS.map(card => ({ ...card, loggedIn: false })))
+  serveCards(SEVEN_CARDS.map(card => ({ ...card, loggedIn: false })))
   api['/api/login/douyin'] = () => reply({ state: 'starting', message: '' })
   api['/api/login/douyin/status'] = () => reply({ state: 'sms_required', message: '' })
   api['/api/login/douyin/sms'] = () => reply({ ok: true })
@@ -130,7 +143,7 @@ it('submits an sms code through the douyin wall and validates its shape', async 
 }, 9000)
 
 it('asks before logout and calls the endpoint once confirmed', async () => {
-  serveCards(FOUR_CARDS.map(card => card.platform === 'bilibili' ? { ...card, loggedIn: true } : { ...card, loggedIn: false }),
+  serveCards(SEVEN_CARDS.map(card => card.platform === 'bilibili' ? { ...card, loggedIn: true } : { ...card, loggedIn: false }),
     { bilibili: { loggedIn: true, name: 'B站昵称', avatar: '' } })
   api['/api/logout/bilibili'] = () => reply({ ok: true })
   await mountConsole()
@@ -147,7 +160,7 @@ it('asks before logout and calls the endpoint once confirmed', async () => {
 })
 
 it('shows and saves the wechat-oa credentials through the form', async () => {
-  serveCards(FOUR_CARDS.map(card => ({ ...card, loggedIn: false })))
+  serveCards(SEVEN_CARDS.map(card => ({ ...card, loggedIn: false })))
   let credentials = { configured: false, appIdMasked: '', name: '', author: '' }
   api['/api/accounts/wechat-oa/credentials'] = method => method === 'GET'
     ? reply(credentials)
@@ -173,7 +186,7 @@ it('shows and saves the wechat-oa credentials through the form', async () => {
 })
 
 it('closes itself after success without cancelling the finished login', async () => {
-  serveCards(FOUR_CARDS.map(card => ({ ...card, loggedIn: false })))
+  serveCards(SEVEN_CARDS.map(card => ({ ...card, loggedIn: false })))
   let phase = 'qr'
   api['/api/login/bilibili'] = () => reply({ state: 'starting', message: '' })
   api['/api/login/bilibili/status'] = () => reply(phase === 'qr'
@@ -190,7 +203,7 @@ it('closes itself after success without cancelling the finished login', async ()
 }, 12000)
 
 it('offers verify to force a fresh whoami check past the cache', async () => {
-  serveCards(FOUR_CARDS, { xiaohongshu: { loggedIn: true, name: '旧名字', avatar: '' } })
+  serveCards(SEVEN_CARDS, { xiaohongshu: { loggedIn: true, name: '旧名字', avatar: '' } })
   let checks = 0
   api['/api/accounts/xiaohongshu/whoami'] = () => {
     checks++
@@ -207,7 +220,7 @@ it('offers verify to force a fresh whoami check past the cache', async () => {
 })
 
 it('tells the operator an explicit verify could not confirm, leaving the state untouched', async () => {
-  serveCards(FOUR_CARDS, { xiaohongshu: { loggedIn: true, name: '旧名字', avatar: '' } })
+  serveCards(SEVEN_CARDS, { xiaohongshu: { loggedIn: true, name: '旧名字', avatar: '' } })
   let force = false
   api['/api/accounts/xiaohongshu/whoami'] = () => force
     ? new Response('{"error":"未能确认当前账号身份，请稍后重试校验"}', { status: 502, headers: { 'content-type': 'application/json' } })
@@ -227,7 +240,7 @@ it('tells the operator an explicit verify could not confirm, leaving the state u
 })
 
 it('closes on Escape during an active login, cancelling it', async () => {
-  serveCards(FOUR_CARDS.map(card => ({ ...card, loggedIn: false })))
+  serveCards(SEVEN_CARDS.map(card => ({ ...card, loggedIn: false })))
   api['/api/login/douyin'] = () => reply({ state: 'starting', message: '' })
   api['/api/login/douyin/status'] = () => reply({ state: 'starting', message: '' })
   await mountConsole()

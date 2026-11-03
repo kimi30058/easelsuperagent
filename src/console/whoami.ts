@@ -28,7 +28,7 @@ export const runReal: RunCommand = async (cmd, options) => {
 }
 /** Per-key whoami timeouts, Easel's own values: browsers are slow to come up. verify() 把 wechat-oa 并到
  *  wechat-oa-mp 的会话上再查表，所以 'wechat-oa' 键永远走不到这里。 */
-const TIMEOUT_MS: Record<Exclude<ProcessKey, 'wechat-oa'>, number> = { xiaohongshu: 35_000, douyin: 40_000, 'wechat-oa-mp': 40_000, bilibili: 60_000 }
+const TIMEOUT_MS: Record<Exclude<ProcessKey, 'wechat-oa'>, number> = { xiaohongshu: 35_000, douyin: 40_000, 'wechat-oa-mp': 40_000, bilibili: 60_000, kuaishou: 40_000, 'weixin-channels': 40_000, zhihu: 40_000 }
 const TTL_MS = 600_000
 
 /** Whoami verification over the skills' own whoami subcommands; results heal the fast path and never report a false negative. */
@@ -95,6 +95,8 @@ export class Whoami {
       case 'xiaohongshu': return [py, script('xhs_publish.py'), 'whoami', '--no-proxy']
       case 'douyin': return [py, script('douyin_publish.py'), 'whoami', '--no-proxy']
       case 'bilibili': return [py, script('bili_login.py'), 'whoami', '--cookie', bilibiliCookiePath(this.deps.root)]
+      case 'kuaishou': case 'weixin-channels': case 'zhihu':
+        return [py, script('web_publisher.py'), 'whoami', '--platform', key]
       default: return [py, script('weixin_mp_stats.py'), 'whoami', '--no-proxy']
     }
   }

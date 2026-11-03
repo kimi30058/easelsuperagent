@@ -29,17 +29,23 @@ beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'sp2-protocol-')) }
 afterEach(async () => { await rm(root, { recursive: true, force: true }) })
 
 describe('platform table', () => {
-  it('lists the four fork platforms plus the wechat-oa-mp process key, and rejects anything else', () => {
-    expect(PLATFORMS.map(p => p.platform)).toEqual(['xiaohongshu', 'bilibili', 'douyin', 'wechat-oa'])
+  it('lists the seven fork platforms plus the wechat-oa-mp process key, and rejects anything else', () => {
+    expect(PLATFORMS.map(p => p.platform)).toEqual(
+      ['xiaohongshu', 'bilibili', 'douyin', 'wechat-oa', 'kuaishou', 'weixin-channels', 'zhihu'])
     expect(PROCESS_KEYS).toContain('wechat-oa-mp')
-    expect(isPlatform('xiaohongshu')).toBe(true)
-    expect(isPlatform('kuaishou')).toBe(false)          // fork 发布范围外的 Easel 平台
+    expect(isPlatform('kuaishou')).toBe(true)           // web_publisher 族，spec 2026-11-03 接入
+    expect(isPlatform('weixin-channels')).toBe(true)
+    expect(isPlatform('zhihu')).toBe(true)
+    expect(isPlatform('weibo')).toBe(false)             // 真未知平台（原 kuaishou 钉子反转，Review Focus 2）
     expect(isProcessKey('../../etc')).toBe(false)       // Review Focus 1
   })
 
   it('maps browser platforms to their global profile directory and leaves biliup/wechat-oa without one', () => {
     expect(profileDir('xiaohongshu')).toContain('XiaohongshuProfile')
     expect(profileDir('wechat-oa-mp')).toContain('WeixinMpProfile')
+    expect(profileDir('kuaishou')).toContain('KuaishouProfile')
+    expect(profileDir('weixin-channels')).toContain('ChannelsProfile')
+    expect(profileDir('zhihu')).toContain('ZhihuProfile')
     expect(profileDir('bilibili')).toBeUndefined()
     expect(profileDir('wechat-oa')).toBeUndefined()
   })
@@ -174,6 +180,21 @@ describe('login commands', () => {
     expect(douyin.some(part => part.endsWith('douyin_publish.py'))).toBe(true)
     expect(loginCommand(deps, 'wechat-oa-mp').some(part => part.endsWith('weixin_mp_stats.py'))).toBe(true)
     expect(() => loginCommand(deps, 'wechat-oa')).toThrow()
+  })
+
+  it('runs the web_publisher family headless: login-qr with --platform, never sms or proxy flags', () => {
+    const deps = { root, scriptsDir: '/repo/skills/easel/shared/scripts' }
+    for (const key of ['kuaishou', 'weixin-channels', 'zhihu'] as const) {
+      const argv = loginCommand(deps, key)
+      expect(argv.some(part => part.endsWith('web_publisher.py'))).toBe(true)
+      expect(argv).toContain('login-qr')               // login 是有头人工登录，runner 必须用 login-qr
+      expect(argv).toContain('--platform')
+      expect(argv[argv.indexOf('--platform') + 1]).toBe(key)   // key 即 --platform 参数值
+      expect(argv).toContain(join(root, 'outputs', '_login', `${key}.png`))    // ADR-0007 显式传参
+      expect(argv).toContain(join(root, 'outputs', '_login', `${key}.json`))
+      expect(argv).not.toContain('--sms-code-file')    // 三家登录无短信墙，传了 unrecognized-argument（Review Focus 1）
+      expect(argv).not.toContain('--no-proxy')         // 脚本内部 launch 已带 --no-proxy-server
+    }
   })
 })
 
@@ -334,6 +355,15 @@ describe('Whoami', () => {
     now += 31_000; await whoami.check('xiaohongshu'); expect(calls).toBe(2)   // 缺 avatar → 60s 后重抓
   })
 
+  it('verifies the web_publisher family via whoami --platform', async () => {
+    const cmds: string[][] = []
+    const run: RunCommand = async cmd => { cmds.push(cmd)
+      return { code: 0, stdout: '{"loggedIn": true, "name": "知乎号", "avatar": ""}' } }
+    const whoami = new Whoami({ root, scriptsDir: '/s', runners: runnersOf(), run })
+    await whoami.check('zhihu')
+    expect(cmds[0]!.join(' ')).toContain('web_publisher.py whoami --platform zhihu')
+  })
+
   it('force skips the cache and a single flight dedupes concurrent checks', async () => {
     let started = 0
     const run: RunCommand = async () => {
@@ -477,11 +507,12 @@ const post = (base: string, path: string, body?: unknown): Promise<Response> =>
     body: body === undefined ? undefined : JSON.stringify(body) })
 
 describe('AccountsApi routes', () => {
-  it('lists the four cards with fast-path login state', async () => {
+  it('lists the seven cards with fast-path login state', async () => {
     const { base, close } = await mounted()
     try {
       const cards = await (await fetch(`${base}/api/accounts`)).json() as { platform: string; loggedIn: boolean }[]
-      expect(cards.map(card => card.platform)).toEqual(['xiaohongshu', 'bilibili', 'douyin', 'wechat-oa'])
+      expect(cards.map(card => card.platform)).toEqual(
+        ['xiaohongshu', 'bilibili', 'douyin', 'wechat-oa', 'kuaishou', 'weixin-channels', 'zhihu'])
       expect(cards[0]!.loggedIn).toBe(false)
     } finally { await close() }
   })
@@ -490,7 +521,7 @@ describe('AccountsApi routes', () => {
     const { base, close } = await mounted()
     try {
       expect((await fetch(`${base}/api/login/..%2f..%2fetc/status`)).status).toBe(404)   // Review Focus 1
-      expect((await post(base, '/api/login/kuaishou')).status).toBe(404)
+      expect((await post(base, '/api/login/weibo')).status).toBe(404)                    // 真未知平台（原 kuaishou 哨兵）
       expect((await fetch(`${base}/api/accounts/tail/whoami`)).status).toBe(404)
     } finally { await close() }
   })
@@ -535,6 +566,20 @@ describe('AccountsApi routes', () => {
     const { base, close } = await mounted()
     try {
       expect((await post(base, '/api/logout/xiaohongshu')).status).toBe(200)
+      expect((await readStatus(paths)).state).toBe('unknown')
+      const { stat } = await import('node:fs/promises')
+      await expect(stat(profile)).rejects.toThrow()
+    } finally { await close() }
+  })
+
+  it('logout of a web-family platform removes the artifacts and the profile directory', async () => {
+    const paths = loginPaths(root, 'zhihu')
+    await writeMarker(paths, 'success', 'n')
+    const profile = join(root, '.easel-browser-profiles', 'ZhihuProfile')
+    await mkdir(profile, { recursive: true })
+    const { base, close } = await mounted()
+    try {
+      expect((await post(base, '/api/logout/zhihu')).status).toBe(200)
       expect((await readStatus(paths)).state).toBe('unknown')
       const { stat } = await import('node:fs/promises')
       await expect(stat(profile)).rejects.toThrow()

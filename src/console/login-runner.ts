@@ -31,6 +31,11 @@ export function loginCommand({ root, scriptsDir, python }: { root: string; scrip
         '--sms-code-file', paths.code, '--timeout', timeout]
     case 'wechat-oa-mp':
       return [py, script('weixin_mp_stats.py'), 'login', '--no-proxy', '--qr-out', paths.qr, '--status-file', paths.status, '--timeout', timeout]
+    case 'kuaishou': case 'weixin-channels': case 'zhihu':
+      // web_publisher 族：headless 登录子命令是 login-qr（login 是有头人工登录），key 即 --platform 值；
+      // 三家登录均无短信墙，内部 launch 已带 --no-proxy-server——两个旗标都不传。
+      return [py, script('web_publisher.py'), 'login-qr', '--platform', key,
+        '--qr-out', paths.qr, '--status-file', paths.status, '--timeout', timeout]
     default:
       throw new AccountError(400, '微信公众号使用凭证表单，不扫码登录')
   }

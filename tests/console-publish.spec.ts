@@ -49,12 +49,13 @@ describe('publish file protocol', () => {
     expect(log!.tail.includes('�')).toBe(false)
   })
 
-  it('aggregates all four platforms, douyin live and the rest quiet', async () => {
+  it('aggregates all seven platforms, douyin live and the rest quiet', async () => {
     const paths = publishPaths(root, 'douyin')
     await mkdir(paths.dir, { recursive: true })
     await writeFile(paths.status, JSON.stringify({ state: 'starting', message: '', qr: '', ts: 1 }), 'utf8')
     const views = await aggregatePublish(root)
-    expect(views.map(view => view.platform)).toEqual(['xiaohongshu', 'bilibili', 'douyin', 'wechat-oa'])
+    expect(views.map(view => view.platform)).toEqual(
+      ['xiaohongshu', 'bilibili', 'douyin', 'wechat-oa', 'kuaishou', 'weixin-channels', 'zhihu'])
     expect(views[2]).toMatchObject({ state: 'starting', logTail: '' })
     expect(views[0]).toMatchObject({ state: 'unknown', logTail: '', logMtime: undefined })
   })
@@ -109,7 +110,8 @@ describe('PublishApi routes', () => {
     const response = await fetch(`${base}/api/publish`)
     expect(response.status).toBe(200)
     const json = await response.json() as { platform: string }[]
-    expect(json.map(view => view.platform)).toEqual(['xiaohongshu', 'bilibili', 'douyin', 'wechat-oa'])
+    expect(json.map(view => view.platform)).toEqual(
+      ['xiaohongshu', 'bilibili', 'douyin', 'wechat-oa', 'kuaishou', 'weixin-channels', 'zhihu'])
   })
 
   it('accepts a code only while douyin is publishing (Review Focus 1)', async () => {
@@ -127,6 +129,8 @@ describe('PublishApi routes', () => {
   it('refuses codes for platforms without a wall and malformed codes (Review Focus 4)', async () => {
     const wrongPlatform = await post('/api/publish/xiaohongshu/sms', { code: '123456' })
     expect(wrongPlatform.status).toBe(400)
+    const webFamily = await post('/api/publish/kuaishou/sms', { code: '123456' })
+    expect(webFamily.status).toBe(400)              // 三平台发布无短信墙（Review Focus 5）
     const malformed = await post('/api/publish/douyin/sms', { code: 'abc' })
     expect(malformed.status).toBe(400)
   })
@@ -141,7 +145,7 @@ describe('PublishApi routes', () => {
     const resend = await post('/api/publish/douyin/resend', {})
     expect(resend.status).toBe(200)
     expect(await stat(paths.resend)).toBeTruthy()
-    const unknown = await fetch(`${base}/api/publish/kuaishou`)
+    const unknown = await fetch(`${base}/api/publish/weibo`)
     expect(unknown.status).toBe(404)
   })
 

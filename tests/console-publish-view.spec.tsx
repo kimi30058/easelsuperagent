@@ -39,6 +39,9 @@ const aggregate = (douyin: { state: string; message?: string; logTail?: string }
   { platform: 'bilibili', state: 'unknown', message: '', logTail: '', logMtime: undefined },
   { platform: 'douyin', message: douyin.message ?? '', logTail: douyin.logTail ?? '', logMtime: undefined, ...douyin },
   { platform: 'wechat-oa', state: 'unknown', message: '', logTail: '', logMtime: undefined },
+  { platform: 'kuaishou', state: 'unknown', message: '', logTail: '', logMtime: undefined },
+  { platform: 'weixin-channels', state: 'unknown', message: '', logTail: '', logMtime: undefined },
+  { platform: 'zhihu', state: 'unknown', message: '', logTail: '', logMtime: undefined },
 ]
 
 async function mountConsole() {
@@ -54,10 +57,10 @@ const goto = async (hash: string) => {
 const find = (platform: string): HTMLElement =>
   document.querySelector(`.console-card[data-platform="${platform}"]`) as HTMLElement
 
-it('renders four cards with the empty state linking the gate conversation when nothing ever published', async () => {
+it('renders seven cards with the empty state linking the gate conversation when nothing ever published', async () => {
   api['/api/publish'] = () => reply(aggregate({ state: 'unknown' }))
   await mountConsole(); await goto('#/publish')
-  expect(all('.console-card')).toHaveLength(4)
+  expect(all('.console-card')).toHaveLength(7)
   expect(find('xiaohongshu').textContent).toContain('尚未发布')
   expect(find('xiaohongshu').querySelector('a[href="#/messages"]')).toBeTruthy()
 })
@@ -102,6 +105,17 @@ it('shows the latest calendar record by its Chinese platform name (Review Focus 
   await mountConsole(); await goto('#/publish')
   expect(find('bilibili').textContent).toContain('B站新视频')   // 文件序最旧在前，卡片要最近一条
   expect(find('wechat-oa').textContent).toContain('公众号草稿')   // 公众号 ≠ 微信公众号：映射表钉死
+})
+
+it('titles and matches the web family by their Chinese names', async () => {
+  api['/api/publish'] = () => reply(aggregate({ state: 'unknown' }))
+  served.calendar = () => reply({ entries: [
+    { platform: '快手', title: '快手新作品', date: '2026-11-03', status: 'published' },
+  ] })
+  await mountConsole(); await goto('#/publish')
+  expect(find('kuaishou').textContent).toContain('快手新作品')   // CALENDAR_NAMES：日历存中文名「快手」
+  expect(find('kuaishou').querySelector('.console-card-title span')!.textContent).toBe('快手')   // DISPLAY_NAMES
+  expect(find('zhihu').querySelector('.console-card-title span')!.textContent).toBe('知乎')       // 未发布也显示中文名
 })
 
 it('shows a known terminal state over a fresh log: a failed publish says so (Important-2)', async () => {
