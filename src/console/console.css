@@ -26,7 +26,7 @@ body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang S
 .console-nav a:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: -2px; }
 .console-badge { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 999px; background: var(--console-gradient); color: var(--dsw-alias-label-primary-foreground); font-size: var(--dt-fs-caption); line-height: var(--dt-lh-caption); font-weight: 500; white-space: nowrap; }
 /* Inbox composes and the publish-gate bar, on the same paper and hairlines as the shell. */
-.console-compose { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin: 0 0 20px; }
+.console-compose { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin: 0 0 20px; padding: 16px; border: 0.5px solid var(--dsw-alias-border-l3); border-radius: var(--dt-radius-m); background: var(--dsw-alias-bg-layer-2); }
 .console-compose textarea { box-sizing: border-box; width: 100%; padding: 10px 12px; border: 0.5px solid var(--dsw-alias-border-l4); border-radius: var(--dt-radius-m); background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); font: inherit; font-size: var(--dt-fs-body); line-height: var(--dt-lh-body); resize: vertical; }
 .console-compose textarea:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 1px; }
 .console-compose-follow { margin: 16px 0 0; }

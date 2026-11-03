@@ -6,7 +6,7 @@ import { threadMark, ticketMark } from '../client/marks.ts'
 import { useAction, usePanel } from '../client/provider.tsx'
 import { actorName, readableMarkers } from '../client/text.ts'
 import { ThreadPage } from '../client/thread.tsx'
-import { Hint, LoadState, StageMark, When } from '../client/widgets.tsx'
+import { Hint, LoadState, PageHeader, StageMark, When } from '../client/widgets.tsx'
 
 /** The person-waiting actions the publish gate serves: the worker reported itself blocked on the gate, or ready for review. */
 const GATED = new Set(['blocked', 'review'])
@@ -75,14 +75,18 @@ function FollowUp({ thread }: { thread: string }): JSX.Element {
   </form>
 }
 
-/** The messages page: every recent thread together, or one thread in full — a console thread answers from the page, the rest stay read-only. */
+/** The messages page: every recent thread together under the header band, or one thread in full — a console thread answers from the page, the rest stay read-only. */
 export function MessagesPage({ id }: { id?: string }): JSX.Element {
+  const { t } = usePanel()
   if (id !== undefined) return <>
     <ThreadPage id={id} />
     {/* Only the console Source accepts a message from the page; its thread keys are `console:<id>`, so the key itself tells them apart. */}
     {id.startsWith('console:') && <FollowUp thread={id} />}
   </>
-  return <ThreadList />
+  return <>
+    <PageHeader title={t('nav.messages')} hint={t('console.messagesIntro')} />
+    <ThreadList />
+  </>
 }
 
 /** The gate's two answers, each carrying the message text its worker reads. */

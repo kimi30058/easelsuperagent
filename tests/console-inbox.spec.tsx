@@ -118,6 +118,14 @@ it('lists threads from both sources together, marking console threads with the b
   await vi.waitFor(() => expect(location.hash).toBe(`#/messages/${encodeURIComponent(CONSOLE_THREAD)}`))
 })
 
+it('opens with the header band and the compose as a card', async () => {
+  await mountConsole()
+  await goto('#/messages')
+  expect(document.querySelector('.dt-header-title')?.textContent).toBe(zh['nav.messages'])
+  expect(document.querySelector('.console-compose')?.className).toContain('console-compose')
+  expect(document.querySelector('.console-compose textarea')).not.toBeNull()
+})
+
 it('keeps a thread the console cannot write to read-only', async () => {
   await mountConsole()
   await goto('#/messages/feishu%3Aoc_1%3Aom_root')
