@@ -323,7 +323,7 @@ div.dt-preview-head { color: var(--dsw-alias-label-secondary); }
   .dt-settings-link[data-stage] + .dt-settings-link:not([data-stage]) { margin-top: 0; }
   .dt-page .dt-tabs { gap: 14px; }
 }
-.dt-list > .dt-ticket { display: grid; grid-template-columns: 120px minmax(0, 1fr); column-gap: 12px; align-items: start; margin: 0; padding: 12px 12px 12px 20px; border-radius: 0; }
+.dt-list > .dt-ticket { display: grid; grid-template-columns: 120px minmax(0, 1fr); column-gap: 12px; align-items: start; margin: 0; padding: 12px 12px 12px 20px; border-radius: var(--dt-radius-m); }
 .dt-list > .dt-ticket[data-state]::before { content: ''; position: absolute; left: 6px; top: 12px; bottom: 12px; width: 2px; border-radius: 1px; background: var(--dsw-alias-state-warn-primary); opacity: 0.7; }
 .dt-list > .dt-ticket[data-state='error']::before { background: var(--dsw-alias-state-error-primary); }
 .dt-ticket-stage { align-self: stretch; padding-top: 1px; border-right: 0.5px solid var(--dsw-alias-border-l3); }
