@@ -10,6 +10,7 @@ import {
 } from '../src/console/login-protocol.ts'
 import { loginCommand, LoginRunners, type RunnerHandle, type SpawnLogin } from '../src/console/login-runner.ts'
 import { Whoami, type RunCommand } from '../src/console/whoami.ts'
+import { WechatCredentials } from '../src/console/wechat-credentials.ts'
 
 /** A run() answering by script filename; the real one runs python with a timeout. */
 const runFrom = (table: Record<string, { code: number; stdout: string } | Error>): RunCommand =>
@@ -289,5 +290,40 @@ describe('Whoami', () => {
     const wechat = new Whoami({ root, scriptsDir: '/s', runners: runnersOf(), run,
       wechatConfigured: async () => true })
     expect(await wechat.check('wechat-oa')).toEqual({ loggedIn: true, name: '微信公众号', avatar: '' })
+  })
+})
+
+describe('WechatCredentials', () => {
+  it('reads through python, masks the AppID, and never returns the secret', async () => {
+    const run: RunCommand = async cmd => {
+      expect(cmd[0]).toBe('python3'); expect(cmd[1]).toBe('-c')
+      expect(String(cmd[3])).toContain('wechat-publisher.yaml')
+      return { code: 0, stdout: JSON.stringify({ app_id: 'wx1234567890ab', app_secret: 'SECRET', name: '我的号', author: '我' }) }
+    }
+    const creds = new WechatCredentials({ scriptsDir: '/repo/skills/easel/shared/scripts', run })
+    const view = await creds.get()
+    expect(view).toEqual({ configured: true, appIdMasked: 'wx1234***90ab', name: '我的号', author: '我' })
+    expect(JSON.stringify(view)).not.toContain('SECRET')
+  })
+
+  it('saves by merging accounts.web and verifying the token, explaining 40164', async () => {
+    const seen: string[] = []
+    const run: RunCommand = async cmd => {
+      seen.push(String(cmd[2]))
+      return { code: 0, stdout: JSON.stringify({ ok: false, message: 'errcode=40164 invalid ip' }) }
+    }
+    const creds = new WechatCredentials({ scriptsDir: '/s', run })
+    const result = await creds.save('wx1', 'sec', '名', '作')
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain('IP 白名单')
+    expect(seen.length).toBe(2)                        // 写、验证（无需先读：表单带回 name/author，写入自带 merge）
+    expect(seen[0]).toContain('accounts')              // 写入 merge accounts.web
+    expect(seen[1]).toContain('cgi-bin/token')         // 验证真调微信
+  })
+
+  it('rejects empty fields with 400', async () => {
+    const creds = new WechatCredentials({ scriptsDir: '/s', run: runFrom({}) })
+    await expect(creds.save('', 'x', '', '')).rejects.toMatchObject({ status: 400 })
+    await expect(creds.save('x', '', '', '')).rejects.toMatchObject({ status: 400 })
   })
 })
