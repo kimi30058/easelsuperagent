@@ -189,6 +189,13 @@ function LoginModal({ platform, name, onClose }: { platform: string; name: strin
   const [sms, setSms] = useState('')
   const [smsError, setSmsError] = useState('')
   const [busy, setBusy] = useState(false)
+  // 有发布进行中时先说一声：worker 正占着浏览器 profile，登录可能直接失败（SP3 spec §4 软提示）。
+  const [publishHint, setPublishHint] = useState(false)
+  useEffect(() => {
+    void accountsFetch<{ platform: string; state: string }[]>('/publish')
+      .then(views => setPublishHint(views.some(view => view.state !== 'unknown' && !['success', 'error'].includes(view.state))))
+      .catch(() => undefined)
+  }, [])
   const terminal = status.state === 'success' || status.state === 'expired' || status.state === 'error'
   useEffect(() => {
     void accountsFetch<LoginStatusView>(`/login/${platform}`, { method: 'POST' })
@@ -232,6 +239,7 @@ function LoginModal({ platform, name, onClose }: { platform: string; name: strin
     onClick={close}>
     <div className="console-modal-card" onClick={event => event.stopPropagation()}>
       <h2>{name}</h2>
+      {publishHint && <p className="console-card-note">{t('console.publishLoginHint')}</p>}
       <p className="console-card-note" role="status" aria-atomic="true">
         {status.message || stateText(t, status.state)}
       </p>

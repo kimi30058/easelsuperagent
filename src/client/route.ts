@@ -17,7 +17,7 @@ export type Route = { page: 'overview' | 'source'; id?: undefined; query?: undef
   | { page: 'execution'; id: string; query?: undefined }
   | { page: 'settings'; id?: undefined; query: { group: SettingsGroup; source?: string; version?: string } }
   | { page: 'messages'; id?: string; query?: undefined }
-  | { page: 'calendar' | 'personas' | 'skills' | 'accounts'; id?: undefined; query?: undefined }
+  | { page: 'calendar' | 'personas' | 'skills' | 'accounts' | 'publish'; id?: undefined; query?: undefined }
 export const HOME: Route = { page: 'overview' }
 export const settingsRoute = (group: SettingsGroup, query: { source?: string; version?: string } = {}): Route =>
   ({ page: 'settings', query: { group, ...query } })
@@ -25,7 +25,7 @@ export const setupPage = (place: SetupPlace): Route =>
   place === 'deployment' ? settingsRoute('deployment') : settingsRoute('source', { source: place })
 /** The dictionary key naming a page in navigation: the console's own pages have `nav.*` words, the shared tabs `tab.*`. */
 const pageKey = (page: Route['page']): EaselSuperagentKey =>
-  page === 'messages' || page === 'calendar' || page === 'personas' || page === 'skills' || page === 'accounts' ? `nav.${page}` : `tab.${page}`
+  page === 'messages' || page === 'calendar' || page === 'personas' || page === 'skills' || page === 'accounts' || page === 'publish' ? `nav.${page}` : `tab.${page}`
 export const routeLabel = (t: T, route: Route): string =>
   route.id ? t(route.page === 'trigger' ? 'term.thread' : 'term.ticket') : t(pageKey(route.page))
 
@@ -49,7 +49,7 @@ export function parseRoute(value: unknown): Route | undefined {
     case 'settings': return { page, query: { group: pick(SETTINGS_GROUPS, query?.group) ?? 'source',
       ...compact({ source: text('source'), version: text('version') }) } }
     case 'messages': return record ? { page, id: record } : { page }
-    case 'calendar': case 'personas': case 'skills': case 'accounts': return { page }
+    case 'calendar': case 'personas': case 'skills': case 'accounts': case 'publish': return { page }
     default: return undefined
   }
 }

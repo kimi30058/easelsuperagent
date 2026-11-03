@@ -16,6 +16,7 @@ import { TriggerStatus } from '../client/trigger.tsx'
 import { AccountsPage } from './accounts.tsx'
 import { CalendarPage, PersonasPage, SkillsPage } from './content.tsx'
 import { GateActions, MessagesPage } from './inbox.tsx'
+import { PublishPage } from './publish.tsx'
 
 /** The console's own translator: the zh words unless the browser asks for English. */
 function consoleText(): T {
@@ -56,7 +57,7 @@ function useHashRoute(): { route: Route; navigate: PanelContext['navigate'] } {
 
 /** The sidebar's pages in labeled groups; every entry is `[page, label key]` and the flat order is the sidebar's order. */
 const NAV_GROUPS: { label: EaselSuperagentKey; items: readonly (readonly [Route['page'], EaselSuperagentKey])[] }[] = [
-  { label: 'console.group.ops', items: [['overview', 'tab.overview'], ['messages', 'nav.messages'], ['execution', 'tab.execution']] },
+  { label: 'console.group.ops', items: [['overview', 'tab.overview'], ['messages', 'nav.messages'], ['execution', 'tab.execution'], ['publish', 'nav.publish']] },
   { label: 'console.group.workspace', items: [['calendar', 'nav.calendar'], ['personas', 'nav.personas'], ['skills', 'nav.skills'], ['accounts', 'nav.accounts']] },
   { label: 'console.group.system', items: [['trigger', 'tab.trigger'], ['eval', 'tab.eval'], ['settings', 'tab.settings']] },
 ]
@@ -90,6 +91,7 @@ function Page({ route }: { route: Route }) {
     case 'personas': return <PersonasPage />
     case 'skills': return <SkillsPage />
     case 'accounts': return <AccountsPage />
+    case 'publish': return <PublishPage />
   }
 }
 
