@@ -23,17 +23,23 @@ export async function readBody(req: IncomingMessage): Promise<unknown> {
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') } catch { throw new AccountError(400, '请求体不是合法 JSON') }
 }
 
+/** How stale the cached execution root may be before one request re-reads the orchestrator's settings view:
+ *  a workspace migration is picked up within this window, without restarting the sidecar. */
+const ROOT_REFRESH_MS = 30_000
+
 /** The sidecar's account routes: everything under /api/*, answered in place (never proxied). */
 export class AccountsApi {
-  private readonly deps: { upstream: string; scriptsDir: string; home: string; spawnLogin?: SpawnLogin; run?: RunCommand }
+  private readonly deps: { upstream: string; scriptsDir: string; home: string; spawnLogin?: SpawnLogin; run?: RunCommand; now: () => number }
   private root?: string
+  private rootRefreshedAt = 0
+  private domainRoot?: string
   private runners?: LoginRunners
   private whoami?: Whoami
   private credentials?: WechatCredentials
-  constructor(deps?: { upstream?: string; scriptsDir?: string; spawnLogin?: SpawnLogin; run?: RunCommand; home?: string }) {
+  constructor(deps?: { upstream?: string; scriptsDir?: string; spawnLogin?: SpawnLogin; run?: RunCommand; home?: string; now?: () => number }) {
     this.deps = { upstream: deps?.upstream ?? process.env.EASEL_SUPERAGENT_URL ?? 'http://127.0.0.1:3082',
       scriptsDir: deps?.scriptsDir ?? defaultScriptsDir(), home: deps?.home ?? homedir(),
-      spawnLogin: deps?.spawnLogin, run: deps?.run }
+      spawnLogin: deps?.spawnLogin, run: deps?.run, now: deps?.now ?? (() => Date.now()) }
   }
   /** Claim and answer one request when it falls under /api/*; false lets the caller carry on. */
   async handle(req: IncomingMessage, url: URL, res: ServerResponse): Promise<boolean> {
@@ -81,8 +87,7 @@ export class AccountsApi {
   }
   /** The card list: the fast path plus each platform's own words; wechat-oa also counts configured credentials. */
   private async cards(): Promise<unknown> {
-    const { credentials } = await this.domain()
-    const root = this.root!
+    const { credentials, root } = await this.domain()
     return Promise.all(PLATFORMS.map(async spec => {
       const loginKey: ProcessKey = spec.platform === 'wechat-oa' ? 'wechat-oa-mp' : spec.platform
       let loggedIn = await loggedInFast(root, loginKey)
@@ -113,42 +118,66 @@ export class AccountsApi {
   }
   /** Logout: stop the runner(s), clear every artifact, remove the profile directory (and biliup's cookie, wechat's credentials). */
   private async logout(platform: LoginPlatform): Promise<void> {
-    const { runners, credentials } = await this.domain()
+    const { runners, credentials, root } = await this.domain()
     const keys: ProcessKey[] = platform === 'wechat-oa' ? ['wechat-oa', 'wechat-oa-mp'] : [platform]
-    for (const key of keys) {
+    // 每键各自走一个 terminate 窗口，两键并行收尾：串行会把窗口叠着算进同一个 POST。
+    await Promise.all(keys.map(async key => {
       await runners.cancel(key).catch(() => undefined)
-      await clearArtifacts(loginPaths(this.root!, key))
+      await clearArtifacts(loginPaths(root, key))
       const profile = profileDir(key, this.deps.home)
       if (profile !== undefined) await rm(profile, { recursive: true, force: true })
-    }
-    if (platform === 'bilibili') await rm(bilibiliCookiePath(this.root!), { force: true })
+    }))
+    if (platform === 'bilibili') await rm(bilibiliCookiePath(root), { force: true })
     if (platform === 'wechat-oa') await credentials.clear()
   }
-  /** The cached execution root from the orchestrator's settings view; 503 until it is known. */
+  /** The execution root from the orchestrator's settings view, cached no longer than ROOT_REFRESH_MS; 503 only
+   *  while it has never been known — a failed refresh keeps serving the stale root instead of failing the panel. */
   private async executionRoot(): Promise<string> {
-    if (this.root !== undefined) return this.root
+    if (this.root !== undefined && this.deps.now() - this.rootRefreshedAt < ROOT_REFRESH_MS) return this.root
+    try {
+      const root = await this.readSettingsRoot()
+      this.root = root
+      this.rootRefreshedAt = this.deps.now()
+      return root
+    } catch (error) {
+      // TTL 到点后的刷新失败不是断供：旧根继续服务；503 只属于从未拿到过根的 sidecar。
+      // 失败也记时刻——否则编排器假死时每个请求都重挂一次 4s 的拉取（登录轮询 1s 一发，会堆积）。
+      if (this.root === undefined) throw error
+      this.rootRefreshedAt = this.deps.now()
+      return this.root
+    }
+  }
+  /** One settings read; throws the 503 with its own words when the orchestrator is unreachable or the root is missing. */
+  private async readSettingsRoot(): Promise<string> {
     let settings: { environment?: { root?: unknown } }
     try {
-      const response = await fetch(`${this.deps.upstream}/orchestrator/api/settings`, { signal: AbortSignal.timeout(4000) })
+      // The sidecar header the orchestrator's sameOrigin() check demands, as the proxied paths send it (server.ts).
+      const response = await fetch(`${this.deps.upstream}/orchestrator/api/settings`,
+        { headers: { 'x-orchestrator-request': '1' }, signal: AbortSignal.timeout(4000) })
       if (!response.ok) throw new Error(`settings ${response.status}`)
       settings = await response.json() as typeof settings
     } catch { throw new AccountError(503, '编排器不可达，无法定位工作根目录') }
     const root = settings.environment?.root
     if (typeof root !== 'string' || !root) throw new AccountError(503, '编排器设置缺少工作根目录')
-    this.root = root
     return root
   }
-  /** Build (once per root) and share the domain objects a request needs. */
-  private async domain(): Promise<{ runners: LoginRunners; whoami: Whoami; credentials: WechatCredentials }> {
+  /** Build (once per root) and share the domain objects a request needs; a root change rebuilds them and retires
+   *  the old root's runners, so no browser keeps writing into a workspace that has moved away. */
+  private async domain(): Promise<{ root: string; runners: LoginRunners; whoami: Whoami; credentials: WechatCredentials }> {
     const root = await this.executionRoot()
-    if (this.runners === undefined || this.whoami === undefined || this.credentials === undefined) {
+    if (this.domainRoot !== root || this.runners === undefined || this.whoami === undefined || this.credentials === undefined) {
+      const previous = this.runners
       const deps = { root, scriptsDir: this.deps.scriptsDir }
       this.runners = new LoginRunners({ ...deps, spawnLogin: this.deps.spawnLogin })
       this.credentials = new WechatCredentials({ scriptsDir: this.deps.scriptsDir, run: this.deps.run })
       this.whoami = new Whoami({ ...deps, runners: this.runners, run: this.deps.run,
         wechatConfigured: async () => (await this.credentials!.get()).configured })
+      this.domainRoot = root
+      // 旧根的 runner 随旧域退场——文案单列：操作者看到的是迁移，不是重启。
+      // （还在飞的旧根 whoami 浏览器不在 runner 表里，收编不到；窗口 ≤60s 且 profile 锁会自我限制。）
+      if (previous !== undefined) await previous.stopAll('工作区已迁移，请重新扫码登录')
     }
-    return { runners: this.runners, whoami: this.whoami, credentials: this.credentials }
+    return { root, runners: this.runners, whoami: this.whoami, credentials: this.credentials }
   }
   private fail(res: ServerResponse, error: unknown): void {
     if (error instanceof AccountError) return reply(res, error.status, { error: error.message })

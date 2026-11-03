@@ -48,6 +48,7 @@ export function AccountsPage(): JSX.Element {
   const [whoami, setWhoami] = useState<Record<string, WhoamiView>>(() => readWhoamiCache())
   const [loginFor, setLoginFor] = useState<{ key: string; name: string } | undefined>()
   const [confirmLogout, setConfirmLogout] = useState<string | undefined>()
+  const [verifyNote, setVerifyNote] = useState<Record<string, string>>({})
   const alive = useRef(true)
   useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
   const load = useCallback(async () => {
@@ -66,6 +67,9 @@ export function AccountsPage(): JSX.Element {
           writeWhoamiCache(next)
           return next
         })
+        // 自愈成功时顺手撤掉验证失败的提示：新的昵称就在眼前，旧失败话术不该并排挂着。
+        setVerifyNote(previous => previous[card.platform] !== undefined && previous[card.platform] !== ''
+          ? { ...previous, [card.platform]: '' } : previous)
       }).catch(() => undefined)  // 502/504：卡片保持原状态，不弹错（spec §7）
     }
   }, [cards])
@@ -75,6 +79,7 @@ export function AccountsPage(): JSX.Element {
     await load()
   }, [load])
   const verify = useCallback(async (platform: string) => {
+    setVerifyNote(previous => ({ ...previous, [platform]: '' }))
     try {
       const result = await accountsFetch<WhoamiView>(`/accounts/${platform}/whoami?force=1`)
       setWhoami(previous => {
@@ -82,13 +87,20 @@ export function AccountsPage(): JSX.Element {
         writeWhoamiCache(next)
         return next
       })
-    } catch { /* 502/504：状态保持不变（spec §7） */ }
-  }, [])
+    } catch (error) {
+      // 502/504：状态保持不变（spec §7）——但这是显式点过的「验证」，要说一声为什么没动静；
+      // 服务端的话术（如 409 的「请稍后重试校验」）比笼统词条更有行动价值，拼在词条后面。
+      const reason = error instanceof Error && error.message !== ''
+        ? `${t('console.accountWhoamiFailed')}：${error.message}` : t('console.accountWhoamiFailed')
+      setVerifyNote(previous => ({ ...previous, [platform]: reason }))
+    }
+  }, [t])
   const closeLogin = useCallback((): void => { setLoginFor(undefined); void load() }, [load])
   if (offline) return <p className="dt-error" role="alert">{t('console.offlineRoot')}</p>
   if (cards === undefined) return <p className="dt-hint">{t('loading')}</p>
   return <div className="console-cards">
     {cards.map(card => <AccountCardView key={card.platform} card={card} whoami={whoami[card.platform]}
+      verifyNote={verifyNote[card.platform] ?? ''}
       onLogin={card.backend === 'wechat-oa' ? () => setLoginFor({ key: 'wechat-oa-mp', name: t('console.mpSession') })
         : () => setLoginFor({ key: card.platform, name: card.name })}
       onVerify={() => { void verify(card.platform) }}
@@ -107,8 +119,8 @@ export function AccountsPage(): JSX.Element {
 }
 
 /** One platform's card: state badge (announced atomically), the whoami name, and its actions. */
-function AccountCardView({ card, whoami, onLogin, onVerify, onLogout }: {
-  card: AccountCard; whoami?: WhoamiView; onLogin(): void; onVerify(): void; onLogout(): void
+function AccountCardView({ card, whoami, verifyNote, onLogin, onVerify, onLogout }: {
+  card: AccountCard; whoami?: WhoamiView; verifyNote: string; onLogin(): void; onVerify(): void; onLogout(): void
 }): JSX.Element {
   const { t } = usePanel()
   // whoami 真校验先于 fast path 显示（Easel 语义：真值覆盖可能过期的标记）；未返回前显示 fast path。
@@ -127,6 +139,7 @@ function AccountCardView({ card, whoami, onLogin, onVerify, onLogout }: {
       {loggedIn && <Button variant="ghost" onClick={onVerify}>{t('console.verify')}</Button>}
       {loggedIn && <Button variant="ghost" onClick={onLogout}>{t('console.logout')}</Button>}
     </div>
+    {verifyNote !== '' && <p className="console-card-note" role="status">{verifyNote}</p>}
   </div>
 }
 
@@ -154,7 +167,7 @@ function CredentialsRow(): JSX.Element {
   return <>
     <div className="console-card-note">{t('console.credentials')}
       {view?.configured && view.appIdMasked !== '' ? `：${view.appIdMasked}` : ''}</div>
-    <Button variant="ghost" onClick={() => { setOpen(previous => !previous) }}>{t('console.credentials')}</Button>
+    <Button variant="ghost" onClick={() => { setOpen(previous => !previous) }}>{t('console.credentialsConfigure')}</Button>
     {open && <form className="console-form" onSubmit={event => { event.preventDefault(); save() }}>
       <label htmlFor="credential-appid">{t('console.appId')}</label>
       <input id="credential-appid" value={fields.appId}

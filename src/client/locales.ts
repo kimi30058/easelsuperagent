@@ -141,6 +141,7 @@ const TEXT = {
   'console.cancelLoginHint': ['关闭窗口将取消本次登录', 'Closing the window cancels this login'],
   'console.verify': ['验证', 'Verify'],
   'console.credentials': ['凭证（发布）', 'Credentials (publishing)'],
+  'console.credentialsConfigure': ['配置凭证', 'Configure credentials'],
   'console.mpSession': ['后台会话（取数）', 'Backend session (analytics)'],
   'console.appId': ['AppID', 'AppID'],
   'console.appSecret': ['AppSecret', 'AppSecret'],

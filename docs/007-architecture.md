@@ -400,6 +400,7 @@ Some generic modules still refer directly to GitHub or Feishu:
 | `src/console/inbox.tsx` | The console inbox: recent Threads of every source with the compose that starts a request, a console Thread's follow-up compose, and `GateActions`, the publish gate's two answers |
 | `src/console/content.tsx` | The console content pages: the calendar's records as recorded, grouped by date, and the workspace's personas and skills |
 | `src/console/login-protocol.ts` | The platform-login file protocol: the platform table and every path and read/write under `outputs/_login`, all explicit per ADR-0007 |
+| `src/console/python.ts` | `pythonBin`, the interpreter the account domain's scripts run on: `EASEL_PYTHON`, then the project venv beside the skill library (`requirements.txt`), then bare python3 |
 | `src/console/login-runner.ts` | `LoginRunners`, the login runners of one sidecar: spawn with every path explicit, pidfile reaping of orphans, per-key serialization, cancel and the shutdown sweep |
 | `src/console/whoami.ts` | `Whoami`, true login verification over the skills' own whoami subcommands: single-flight with a TTL cache, confident-or-502, and the success marker write-back |
 | `src/console/wechat-credentials.ts` | `WechatCredentials`, the official account's AppID/AppSecret in wechat-publisher.yaml, written through python and verified against the token API |

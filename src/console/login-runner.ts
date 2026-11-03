@@ -1,5 +1,6 @@
 /** Login runner processes: spawn per platform with every path explicit, pidfile reaping, per-key serialization, cancel, and shutdown. */
 import { spawn as nodeSpawn } from 'node:child_process'
+import { pythonBin } from './python.ts'
 import { closeSync, openSync } from 'node:fs'
 import { mkdir, rm, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -14,10 +15,10 @@ export class AccountError extends Error {
 }
 
 /** The argv that runs one platform's login with every artifact path explicit (ADR-0007); the scripts' own defaults are wrong in this fork. */
-export function loginCommand({ root, scriptsDir }: { root: string; scriptsDir: string }, key: ProcessKey): string[] {
+export function loginCommand({ root, scriptsDir, python }: { root: string; scriptsDir: string; python?: string }, key: ProcessKey): string[] {
   const script = (name: string) => join(scriptsDir, name)
   const paths = loginPaths(root, key)
-  const py = 'python3'
+  const py = python ?? pythonBin(scriptsDir)
   const timeout = '180'
   switch (key) {
     case 'xiaohongshu':
@@ -50,6 +51,9 @@ const realSpawn: SpawnLogin = (cmd, options) => {
   const child = nodeSpawn(cmd[0]!, cmd.slice(1), { cwd: options.cwd, env: options.env, detached: true,
     stdio: ['ignore', logFd, logFd] })
   const exited = new Promise<number | null>(resolve => {
+    // ENOENT 一类 spawn 失败只发 error 不发 exit——不接住它，exited 永远悬空，键卡死在 in-flight，
+    // 而且无人监听的 error 会成为未捕获异常，最坏带崩整个 sidecar。
+    child.on('error', () => { try { closeSync(logFd) } catch { /* already closed */ }; resolve(null) })
     child.on('exit', (code, signal) => { try { closeSync(logFd) } catch { /* already closed */ }; resolve(signal ? null : code) })
   })
   // The runner is detached, so its pid names a process group: killing -pid takes the browser tree with it.
@@ -71,9 +75,9 @@ const delay = (ms: number): Promise<void> => new Promise(resolve => setTimeout(r
 /** The runners of one sidecar process: at most one live runner per key, orphan reaping from pidfiles, and a shutdown sweep. */
 export class LoginRunners {
   private readonly runners = new Map<ProcessKey, RunnerHandle>()
-  private readonly deps: { root: string; scriptsDir: string; spawnLogin: SpawnLogin; terminateWindowMs: number }
-  constructor(deps: { root: string; scriptsDir: string; spawnLogin?: SpawnLogin; terminateWindowMs?: number }) {
-    this.deps = { root: deps.root, scriptsDir: deps.scriptsDir, spawnLogin: deps.spawnLogin ?? realSpawn,
+  private readonly deps: { root: string; scriptsDir: string; python: string; spawnLogin: SpawnLogin; terminateWindowMs: number }
+  constructor(deps: { root: string; scriptsDir: string; python?: string; spawnLogin?: SpawnLogin; terminateWindowMs?: number }) {
+    this.deps = { root: deps.root, scriptsDir: deps.scriptsDir, python: deps.python ?? pythonBin(deps.scriptsDir), spawnLogin: deps.spawnLogin ?? realSpawn,
       terminateWindowMs: deps.terminateWindowMs ?? 8000 }
   }
   /** Start (or reuse) one key's login; `restart` terminates the in-flight runner first. */
@@ -119,13 +123,14 @@ export class LoginRunners {
     const killedOrphan = await this.killPidfile(key)                    // 无句柄的活孤儿（sidecar 重启后）
     if (killedOrphan) await writeMarker(loginPaths(this.deps.root, key), 'expired', '已取消')
   }
-  /** Shutdown sweep: every live runner is terminated and marked expired so the next start is clean. */
-  async stopAll(): Promise<void> {
+  /** Shutdown sweep: every live runner is terminated and marked expired so the next start is clean.
+   *  `message` says why (the default is the sidecar restart; a workspace migration passes its own words). */
+  async stopAll(message = '服务已重启，请重新扫码登录'): Promise<void> {
     for (const key of [...this.runners.keys()]) {
       const runner = this.runners.get(key)
       if (runner !== undefined && (await settledOrNull(runner)) === undefined) {  // alive now
         await this.terminate(runner)
-        await writeMarker(loginPaths(this.deps.root, key), 'expired', '服务已重启，请重新扫码登录')
+        await writeMarker(loginPaths(this.deps.root, key), 'expired', message)
       }
     }
   }
@@ -157,7 +162,9 @@ export class LoginRunners {
     const handle = this.deps.spawnLogin(loginCommand(this.deps, key), { cwd: this.deps.root, env, logFile: paths.log })
     this.runners.set(key, handle)
     void handle.exited.then(code => runnerExitCode.set(handle, code ?? -1))
-    await writeFile(paths.pid, String(handle.pid), 'utf8').catch(() => undefined)
+    // spawn 不成时 pid 运行时是 undefined：别把 "undefined" 写进 pidfile（readPid 会当垃圾丢掉，徒留困惑）。
+    if (Number.isInteger(handle.pid) && handle.pid > 1)
+      await writeFile(paths.pid, String(handle.pid), 'utf8').catch(() => undefined)
   }
   /** A live pid in the pidfile is adopted (its runner keeps writing status); a dead one is cleared away. */
   private async reapPidfile(key: ProcessKey): Promise<boolean> {

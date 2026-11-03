@@ -156,7 +156,9 @@ it('shows and saves the wechat-oa credentials through the form', async () => {
   await goto('#/accounts')
   expect(container!.textContent).toContain(zh['console.credentials'])
   expect(container!.textContent).not.toContain('wx1234***90ab')           // 未配置时不显示
-  await act(async () => { cardButton('wechat-oa', zh['console.credentials']).click() })
+  // note 行是名词（配置后带脱敏 AppID），按钮是动作词：「凭证（发布）」不得在按钮上再出现一遍
+  expect(all(`.console-card[data-platform='wechat-oa'] button`).some(button => button.textContent === zh['console.credentials'])).toBe(false)
+  await act(async () => { cardButton('wechat-oa', zh['console.credentialsConfigure']).click() })
   await settle()
   const appId = container!.querySelector('.console-form input#credential-appid') as HTMLInputElement
   const secret = container!.querySelector('.console-form input#credential-secret') as HTMLInputElement
@@ -201,6 +203,27 @@ it('offers verify to force a fresh whoami check past the cache', async () => {
   await click(cardButton('xiaohongshu', zh['console.verify']))
   await settle()
   expect(container!.textContent).toContain('新名字')
+  expect(container!.textContent).not.toContain(zh['console.accountWhoamiFailed'])   // 成功不说失败的话
+})
+
+it('tells the operator an explicit verify could not confirm, leaving the state untouched', async () => {
+  serveCards(FOUR_CARDS, { xiaohongshu: { loggedIn: true, name: '旧名字', avatar: '' } })
+  let force = false
+  api['/api/accounts/xiaohongshu/whoami'] = () => force
+    ? new Response('{"error":"未能确认当前账号身份，请稍后重试校验"}', { status: 502, headers: { 'content-type': 'application/json' } })
+    : reply({ loggedIn: true, name: '旧名字', avatar: '' })
+  await mountConsole()
+  await goto('#/accounts')
+  force = true
+  await click(cardButton('xiaohongshu', zh['console.verify']))
+  await settle()
+  expect(container!.textContent).toContain(zh['console.accountWhoamiFailed'])
+  expect(container!.textContent).toContain('未能确认当前账号身份')      // 服务端的具体原因拼在词条后
+  expect(container!.textContent).toContain('旧名字')                   // spec §7：状态保持不变，不误报
+  force = false                                                       // 下一次验证成功：失败话术即撤
+  await click(cardButton('xiaohongshu', zh['console.verify']))
+  await settle()
+  expect(container!.textContent).not.toContain(zh['console.accountWhoamiFailed'])
 })
 
 it('closes on Escape during an active login, cancelling it', async () => {

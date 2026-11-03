@@ -9,7 +9,7 @@ import {
   loggedInFast, loginDir, loginPaths, profileDir, readQr, readStatus, validSmsCode, writeMarker, writeSmsCode,
 } from '../src/console/login-protocol.ts'
 import { loginCommand, LoginRunners, type RunnerHandle, type SpawnLogin } from '../src/console/login-runner.ts'
-import { Whoami, type RunCommand } from '../src/console/whoami.ts'
+import { runReal, Whoami, type RunCommand } from '../src/console/whoami.ts'
 import { WechatCredentials } from '../src/console/wechat-credentials.ts'
 import { AccountsApi } from '../src/console/accounts-api.ts'
 import { createServer, type Server } from 'node:http'
@@ -131,6 +131,31 @@ function fakeSpawn(): { spawnLogin: SpawnLogin; commands: string[][]; handles: F
   }
   return { spawnLogin, commands, handles }
 }
+
+describe('python interpreter', () => {
+  it('prefers EASEL_PYTHON, then the venv beside the skill library, then bare python3', async () => {
+    const { pythonBin } = await import('../src/console/python.ts')
+    const previous = process.env.EASEL_PYTHON
+    try {
+      process.env.EASEL_PYTHON = '/opt/custom/python'
+      expect(pythonBin('/repo/skills/easel/shared/scripts')).toBe('/opt/custom/python')
+      delete process.env.EASEL_PYTHON
+      expect(pythonBin('/repo/skills/easel/shared/scripts')).toBe('python3')          // /repo/.venv 不存在
+      const repo = await mkdtemp(join(tmpdir(), 'sp2-venv-'))
+      const scripts = join(repo, 'skills', 'easel', 'shared', 'scripts')
+      const venvPy = join(repo, '.venv', 'bin', 'python')
+      await mkdir(join(venvPy, '..'), { recursive: true })
+      await writeFile(venvPy, '', 'utf8')
+      expect(pythonBin(scripts)).toBe(venvPy)
+    } finally {
+      if (previous === undefined) delete process.env.EASEL_PYTHON; else process.env.EASEL_PYTHON = previous
+    }
+  })
+  it('runs the login with the resolved interpreter', () => {
+    const deps = { root, scriptsDir: '/repo/skills/easel/shared/scripts', python: '/repo/.venv/bin/python' }
+    expect(loginCommand(deps, 'xiaohongshu')[0]).toBe('/repo/.venv/bin/python')
+  })
+})
 
 describe('login commands', () => {
   it('passes every path explicitly per platform (ADR-0007)', () => {
@@ -276,6 +301,19 @@ describe('review fixes: real spawn path, cancel guard, kill escalation', () => {
     expect(handle.signals).toEqual(['SIGTERM', 'SIGKILL'])
     expect((await runners.status('douyin')).state).toBe('expired')
   })
+
+  it('settles a runner whose binary never spawns (ENOENT) instead of wedging the key in-flight', async () => {
+    const previousPath = process.env.PATH
+    process.env.PATH = ''                                // 解析到的 python3 找不到：spawn 只发 error，不发 exit
+    try {
+      const runners = new LoginRunners({ root, scriptsDir: '/s', terminateWindowMs: 60 })
+      await runners.start('xiaohongshu')
+      expect(await runners.waitExit('xiaohongshu')).toBe(true)                        // exited 落定
+      expect(runners.isRunning('xiaohongshu')).toBe(false)
+      expect((await runners.status('xiaohongshu')).state).toBe('error')              // 合成异常退出并指向日志
+      await expect(readFile(loginPaths(root, 'xiaohongshu').pid, 'utf8')).rejects.toThrow()  // 无 pid 可写就不写
+    } finally { process.env.PATH = previousPath }
+  })
 })
 
 describe('Whoami', () => {
@@ -305,6 +343,21 @@ describe('Whoami', () => {
     await Promise.all([whoami.check('douyin'), whoami.check('douyin')])
     expect(started).toBe(1)
     await whoami.check('douyin', true); expect(started).toBe(2)
+  })
+
+  it('never boards a force check onto a non-force flight that would settle from the cache', async () => {
+    let started = 0
+    const run: RunCommand = async () => { started++; return { code: 0, stdout: '{"loggedIn": false}' } }
+    const whoami = new Whoami({ root, scriptsDir: '/s', runners: runnersOf(), run })
+    await whoami.check('douyin')                                                  // 先填缓存
+    expect(started).toBe(1)
+    await Promise.all([whoami.check('douyin'), whoami.check('douyin', true)])     // 非 force 命中缓存，force 不得并船
+    expect(started).toBe(2)
+  })
+
+  it('maps a spawn failure (ENOENT) onto a numeric exit code, not the error\'s string code', async () => {
+    const finished = await runReal(['easel-test-no-such-binary'], { cwd: root, timeoutMs: 2000 })
+    expect(finished).toEqual({ code: 1, stdout: '' })
   })
 
   it('treats an unconfident answer as 502, never a false negative, and writes no marker for it', async () => {
@@ -389,15 +442,25 @@ describe('review fixes: scripts dir override', () => {
 })
 
 /** An api mounted on a real HTTP server with a settings upstream naming our temp root (and its own home for profile deletes). */
-async function mounted(over?: { settings?: object | 'dead'; home?: string }): Promise<{ base: string; close(): Promise<void> }> {
+async function mounted(over?: {
+  settings?: object | 'dead' | (() => object | 'dead'); home?: string; spawnLogin?: SpawnLogin; run?: RunCommand; now?: () => number
+}): Promise<{ base: string; close(): Promise<void> }> {
   const settings = createServer((req, res) => {
-    if (over?.settings === 'dead') { res.destroy(); return }
+    const view = typeof over?.settings === 'function' ? over.settings() : over?.settings
+    if (view === 'dead') { res.destroy(); return }
+    // The real orchestrator refuses settings without the sidecar header (sameOrigin() in src/app/http.ts).
+    if (req.headers['x-orchestrator-request'] !== '1') {
+      res.writeHead(403, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Same-origin management request required' }))
+      return
+    }
     res.writeHead(200, { 'content-type': 'application/json' })
-    res.end(JSON.stringify(over?.settings ?? { environment: { root, variables: [] } }))
+    res.end(JSON.stringify(view ?? { environment: { root, variables: [] } }))
   })
   await new Promise<void>(r => settings.listen(0, '127.0.0.1', r))
   const upstream = `http://127.0.0.1:${(settings.address() as { port: number }).port}`
-  const api = new AccountsApi({ upstream, scriptsDir: '/s', home: over?.home ?? root })
+  const api = new AccountsApi({ upstream, scriptsDir: '/s', home: over?.home ?? root,
+    spawnLogin: over?.spawnLogin, run: over?.run, now: over?.now })
   const server = createServer((req, res) => {
     void api.handle(req, new URL(req.url ?? '/', 'http://127.0.0.1'), res).catch(() => res.destroy())
   })
@@ -475,5 +538,80 @@ describe('AccountsApi routes', () => {
       const { stat } = await import('node:fs/promises')
       await expect(stat(profile)).rejects.toThrow()
     } finally { await close() }
+  })
+
+  it('logout of wechat-oa clears both process keys and its credentials', async () => {
+    for (const key of ['wechat-oa', 'wechat-oa-mp'] as const) {
+      const paths = loginPaths(root, key)
+      await mkdir(paths.dir, { recursive: true })
+      await writeFile(paths.status, JSON.stringify({ state: 'success', message: '' }), 'utf8')
+    }
+    const runs: string[][] = []
+    const run: RunCommand = async cmd => { runs.push(cmd); return { code: 0, stdout: '{}' } }
+    const { base, close } = await mounted({ run })
+    try {
+      expect((await post(base, '/api/logout/wechat-oa')).status).toBe(200)
+      expect((await readStatus(loginPaths(root, 'wechat-oa'))).state).toBe('unknown')
+      expect((await readStatus(loginPaths(root, 'wechat-oa-mp'))).state).toBe('unknown')
+      expect(runs.some(cmd => cmd.join(' ').includes("pop('web'"))).toBe(true)   // 凭证随登出清掉（CLEAR_PY）
+    } finally { await close() }
+  })
+
+  it('refreshes the execution root once its TTL passes, so a migrated workspace needs no sidecar restart', async () => {
+    let now = 1_000_000
+    const migrated = await mkdtemp(join(tmpdir(), 'sp2-migrated-'))
+    const settings = { environment: { root, variables: [] } }
+    const { base, close } = await mounted({ settings: () => settings, now: () => now })
+    try {
+      const paths = loginPaths(migrated, 'xiaohongshu')                  // 二维码只放进迁移后的新根
+      await mkdir(paths.dir, { recursive: true })
+      await writeFile(paths.status, JSON.stringify({ state: 'qr_ready', message: '', qr: '', ts: 1 }), 'utf8')
+      await writeFile(paths.qr, Buffer.from([9, 9, 9]))
+      expect((await fetch(`${base}/api/login/xiaohongshu/qr`)).status).toBe(404)    // 旧根里还没有二维码
+      settings.environment.root = migrated
+      now += 31_000
+      const response = await fetch(`${base}/api/login/xiaohongshu/qr`)
+      expect(response.status).toBe(200)                                             // TTL 一过就读新根
+      expect(Buffer.from(await response.arrayBuffer())).toEqual(Buffer.from([9, 9, 9]))
+    } finally { await close(); await rm(migrated, { recursive: true, force: true }) }
+  })
+
+  it('serves the cached root past the TTL when the refresh cannot reach the orchestrator', async () => {
+    let now = 1_000_000
+    let dead = false
+    let hits = 0
+    const settings = { environment: { root, variables: [] } }
+    const { base, close } = await mounted({ settings: () => { hits++; return dead ? 'dead' : settings }, now: () => now })
+    try {
+      expect((await fetch(`${base}/api/accounts`)).status).toBe(200)               // 首次拿到根
+      expect(hits).toBe(1)
+      dead = true
+      now += 31_000                                                                // TTL 到点但编排器断了
+      expect((await fetch(`${base}/api/accounts`)).status).toBe(200)               // 旧根继续服务，不回 503
+      expect((await fetch(`${base}/api/accounts`)).status).toBe(200)               // 失败按 TTL 退避：不再连发 4s 拉取
+      expect(hits).toBe(2)
+    } finally { await close() }
+  })
+
+  it('retires the old root\'s runners when the refreshed root moves the workspace', async () => {
+    let now = 1_000_000
+    const migrated = await mkdtemp(join(tmpdir(), 'sp2-migrated-'))
+    const settings = { environment: { root, variables: [] } }
+    let settle: (code: number | null) => void = () => undefined        // SIGTERM 一打就退的 runner
+    const exited = new Promise<number | null>(resolve => { settle = resolve })
+    const signals: string[] = []
+    const spawnLogin: SpawnLogin = () => ({ pid: 31000, exited,
+      kill: signal => { signals.push(signal ?? 'SIGTERM'); settle(null) } })
+    const { base, close } = await mounted({ settings: () => settings, now: () => now, spawnLogin })
+    try {
+      expect((await post(base, '/api/login/xiaohongshu')).status).toBe(200)        // 旧根上起了 runner
+      settings.environment.root = migrated
+      now += 31_000
+      await fetch(`${base}/api/accounts`)                                          // 任一请求触发换根重建
+      expect(signals).toEqual(['SIGTERM'])                                         // 旧 runner 收编退场
+      const retired = await readStatus(loginPaths(root, 'xiaohongshu'))
+      expect(retired.state).toBe('expired')
+      expect(retired.message).toContain('迁移')                                    // 文案说迁移，不说重启
+    } finally { await close(); await rm(migrated, { recursive: true, force: true }) }
   })
 })

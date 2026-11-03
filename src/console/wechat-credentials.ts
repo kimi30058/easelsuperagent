@@ -2,6 +2,7 @@
 import { join } from 'node:path'
 import { AccountError } from './login-runner.ts'
 import { runReal, type RunCommand } from './whoami.ts'
+import { pythonBin } from './python.ts'
 
 const READ_PY = `import json,pathlib,sys,yaml
 p=pathlib.Path(sys.argv[1])
@@ -38,10 +39,10 @@ interface StoredAccount { app_id: string; app_secret: string; name: string; auth
 
 /** accounts.web of the wechat-publisher skill's yaml, written by merging (other accounts survive) and verified against the token API. */
 export class WechatCredentials {
-  private readonly deps: { yamlPath: string; run: RunCommand }
-  constructor(deps: { scriptsDir: string; run?: RunCommand }) {
+  private readonly deps: { yamlPath: string; python: string; run: RunCommand }
+  constructor(deps: { scriptsDir: string; python?: string; run?: RunCommand }) {
     const skillDir = join(deps.scriptsDir, '..', '..', 'builtin', 'skill-wechat-publisher')
-    this.deps = { yamlPath: join(skillDir, 'wechat-publisher.yaml'), run: deps.run ?? runReal }
+    this.deps = { yamlPath: join(skillDir, 'wechat-publisher.yaml'), python: deps.python ?? pythonBin(deps.scriptsDir), run: deps.run ?? runReal }
   }
   /** The stored state as the card shows it: AppID masked, secret absent. */
   async get(): Promise<CredentialsView> {
@@ -54,10 +55,10 @@ export class WechatCredentials {
   /** Store AppID/AppSecret (validating presence), then verify against the real token endpoint; stored even when verification fails. */
   async save(appId: string, appSecret: string, name: string, author: string): Promise<{ ok: boolean; message: string }> {
     if (!appId.trim() || !appSecret.trim()) throw new AccountError(400, 'AppID 和 AppSecret 都不能为空')
-    const written = await this.deps.run(['python3', '-c', WRITE_PY, this.deps.yamlPath, appId.trim(), appSecret.trim(), name.trim(), author.trim()],
+    const written = await this.deps.run([this.deps.python, '-c', WRITE_PY, this.deps.yamlPath, appId.trim(), appSecret.trim(), name.trim(), author.trim()],
       { cwd: '/', timeoutMs: 15_000 })
     if (written.code !== 0) throw new AccountError(503, `凭证写入失败（python3 或 pyyaml 不可用，退出码 ${written.code}）`)
-    const verification = await this.deps.run(['python3', '-c', VERIFY_PY, appId.trim(), appSecret.trim()],
+    const verification = await this.deps.run([this.deps.python, '-c', VERIFY_PY, appId.trim(), appSecret.trim()],
       { cwd: '/', timeoutMs: 30_000 })
     const parsed = parseJsonLine(verification.stdout)
     if (parsed === undefined) return { ok: false, message: '凭证已保存，但验证未能执行（python3 或网络不可用）' }
@@ -66,12 +67,12 @@ export class WechatCredentials {
   }
   /** Remove accounts.web (logout); a missing file or entry is already clear. */
   async clear(): Promise<void> {
-    await this.deps.run(['python3', '-c', CLEAR_PY, this.deps.yamlPath], { cwd: '/', timeoutMs: 15_000 }).catch(() => undefined)
+    await this.deps.run([this.deps.python, '-c', CLEAR_PY, this.deps.yamlPath], { cwd: '/', timeoutMs: 15_000 }).catch(() => undefined)
   }
   /** The stored account; a read that cannot run or parse degrades to empty — the card shows "not configured", not an outage. */
   private async read(): Promise<StoredAccount> {
     try {
-      const finished = await this.deps.run(['python3', '-c', READ_PY, this.deps.yamlPath], { cwd: '/', timeoutMs: 15_000 })
+      const finished = await this.deps.run([this.deps.python, '-c', READ_PY, this.deps.yamlPath], { cwd: '/', timeoutMs: 15_000 })
       const parsed = parseJsonLine(finished.stdout)
       return parsed === undefined ? EMPTY_ACCOUNT : parsed as StoredAccount
     } catch { return EMPTY_ACCOUNT }
